@@ -1,0 +1,90 @@
+services:
+  - type: web
+    name: limbo-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GATEWAY_MODE
+        value: razorpay
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ORDER_FULFILLABLE_WINDOW_MINUTES
+        value: "30"
+      - key: REFUND_SETTLEMENT_SLA_HOURS
+        value: "72"
+      - key: MAX_AUTO_AMOUNT_PAISE
+        value: "500000"
+      - key: MAX_RETRY_ATTEMPTS
+        value: "3"
+      - key: CIRCUIT_BREAKER_FALSE_INTERVENTION_RATE
+        value: "0.02"
+      - key: DRY_RUN
+        value: "true"
+      - key: BASELINE_RESOLUTION_DAYS
+        value: "21"
+      - key: RECON_INTERVAL_SECONDS
+        value: "60"
+      - key: RUN_EMBEDDED_SCHEDULER
+        value: "false"
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      - key: DASHBOARD_API_KEY
+        sync: false
+      - key: DEMO_ORDER_AMOUNT_PAISE
+        value: "100000"
+      - key: DEMO_MAX_AMOUNT_PAISE
+        value: "100000"
+      - key: DEMO_SESSION_TTL_MINUTES
+        value: "30"
+      - key: DEMO_FULFILLABLE_WINDOW_SECONDS
+        value: "20"
+      - key: DEMO_RATE_LIMIT_PER_MINUTE
+        value: "10"
+
+  - type: worker
+    name: limbo-worker
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: python -m app.worker
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GATEWAY_MODE
+        value: razorpay
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ORDER_FULFILLABLE_WINDOW_MINUTES
+        value: "30"
+      - key: REFUND_SETTLEMENT_SLA_HOURS
+        value: "72"
+      - key: MAX_AUTO_AMOUNT_PAISE
+        value: "500000"
+      - key: MAX_RETRY_ATTEMPTS
+        value: "3"
+      - key: CIRCUIT_BREAKER_FALSE_INTERVENTION_RATE
+        value: "0.02"
+      - key: DRY_RUN
+        value: "true"
+      - key: BASELINE_RESOLUTION_DAYS
+        value: "21"
+      - key: RECON_INTERVAL_SECONDS
+        value: "60"

@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: limbo
+      POSTGRES_PASSWORD: limbo
+      POSTGRES_DB: limbo
+    ports:
+      - "5432:5432"
+    volumes:
+      - limbo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U limbo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://limbo:limbo@postgres:5432/limbo
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ./dashboard
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  limbo_pgdata:

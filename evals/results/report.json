@@ -1,0 +1,50 @@
+{
+  "total_transactions": 500,
+  "detection": {
+    "overall_accuracy": 1.0,
+    "by_state": {
+      "REFUND_STUCK": {
+        "count": 25,
+        "correct": 25,
+        "recall": 1.0,
+        "precision": 1.0
+      },
+      "MATCHED_HEALTHY": {
+        "count": 400,
+        "correct": 400,
+        "recall": 1.0,
+        "precision": 1.0
+      },
+      "LIMBO_PAID_CANCELLED": {
+        "count": 75,
+        "correct": 75,
+        "recall": 1.0,
+        "precision": 1.0
+      }
+    }
+  },
+  "diagnosis": {
+    "accuracy": 1.0,
+    "sources_used": {
+      "deterministic": 500
+    }
+  },
+  "money": {
+    "revenue_recovered_paise": 0,
+    "loss_prevented_paise": 2836600,
+    "revenue_recovered_rupees": 0.0,
+    "loss_prevented_rupees": 28366.0
+  },
+  "mttr": {
+    "baseline_days": 21,
+    "agent_resolution": "same reconciliation cycle (minutes, mock mode)"
+  },
+  "false_intervention": {
+    "count": 0,
+    "executed_actions": 100,
+    "rate": 0.0,
+    "circuit_breaker_threshold": 0.02
+  },
+  "exceptions": [],
+  "audit_log_entries": 33109
+}

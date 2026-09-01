@@ -1,0 +1,50 @@
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: str
+
+    gateway_mode: str = "mock"
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
+
+    anthropic_api_key: str = ""
+
+    order_fulfillable_window_minutes: int = 30
+    refund_settlement_sla_hours: int = 72
+
+    max_auto_amount_paise: int = 500_000
+    max_retry_attempts: int = 3
+    circuit_breaker_false_intervention_rate: float = 0.02
+    dry_run: bool = True
+
+    baseline_resolution_days: int = 21
+
+    recon_interval_seconds: int = 60
+    run_embedded_scheduler: bool = True
+
+    cors_allow_origins: str = "http://localhost:3000"
+    dashboard_api_key: str = ""
+
+    demo_order_amount_paise: int = 100_000
+    demo_max_amount_paise: int = 100_000
+    demo_session_ttl_minutes: int = 30
+    demo_fulfillable_window_seconds: int = 20
+    demo_rate_limit_per_minute: int = 10
+
+    @field_validator("razorpay_key_id")
+    @classmethod
+    def _reject_live_keys(cls, value: str) -> str:
+        if value and not value.startswith("rzp_test_"):
+            raise ValueError(
+                f"RAZORPAY_KEY_ID must start with 'rzp_test_', got {value[:8]!r}... — "
+                "live keys are never permitted in this deployment"
+            )
+        return value
+
+
+settings = Settings()
