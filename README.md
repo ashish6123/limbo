@@ -2,6 +2,8 @@
 
 Agentic reconciliation and recovery for payments stuck between "the gateway says it worked" and "the merchant says it didn't."
 
+**Live:** [limbo-ochre.vercel.app](https://limbo-ochre.vercel.app) — dashboard with live totals, queue, and audit trail. [limbo-ochre.vercel.app/demo](https://limbo-ochre.vercel.app/demo) — pick a scenario and watch one payment go into limbo and recover in real time, via a real Razorpay test-mode checkout or a one-click scripted run.
+
 ## The problem
 
 A customer pays on a merchant app. The payment gateway marks the payment successful and debits the money. But the success webhook to the merchant is lost, delayed, or fails mid-processing. The merchant's system shows "payment gateway failure," cancels the order, and — because its own records say the payment failed — never triggers a refund.
@@ -29,6 +31,8 @@ Full diagrams, with narration, in `docs/`:
 - [`docs/decisions.md`](docs/decisions.md) — ADR-style log of every non-obvious design decision, including real bugs found while building and how they were fixed
 
 **Where the LLM is used, and where it deliberately isn't:** deterministic code owns reconciliation diffing, guardrail enforcement, idempotency, and metrics. The LLM (Claude) is used only for root-cause narration and ambiguous-case triage — with a deterministic fallback that runs identically offline, and a hard rule that the LLM path can never route directly to a money-moving action. See `docs/decisions.md` ADR-017.
+
+**The public demo** (`/demo` on the live site, `app/demo/` in the backend) drives the same `ReconciliationEngine`, `DiagnosisEngine`, and `PolicyEngine` as the general pipeline, on one order at a time, and streams its real audit log rows to the browser over server-sent events as they're written — nothing shown is fabricated or optimistic. Each demo order is isolated behind an unguessable per-order token, capped at a fixed small amount regardless of the deployment's general `MAX_AUTO_AMOUNT_PAISE`, and rate-limited per IP, so it's safe to leave open to the public.
 
 ## Quickstart
 
@@ -68,6 +72,10 @@ make razorpay-checkout   # prints a real test-mode payment link
 # pay it with a Razorpay test card, then:
 cd backend && python -m scripts.verify_phase6 <order_id> <payment_id>
 ```
+
+## Deployment
+
+The live site runs on three free-tier services: Vercel (dashboard), Render (FastAPI app, with the reconciliation loop embedded since Render's free plan has no separate Background Worker), and Supabase (Postgres). Full architecture, env vars, and the free-tier caveats that follow from them (cold start, database auto-pause) are in [`docs/deployment.md`](docs/deployment.md); the Render service itself is defined in [`render.yaml`](render.yaml).
 
 ## Results
 
