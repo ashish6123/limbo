@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
+    paypal_client_id: str = ""
+    paypal_client_secret: str = ""
+    paypal_webhook_id: str = ""
+    paypal_base_url: str = "https://api-m.sandbox.paypal.com"
+    paypal_currency: str = "USD"
 
     anthropic_api_key: str = ""
 
@@ -45,6 +50,16 @@ class Settings(BaseSettings):
                 "live keys are never permitted in this deployment"
             )
         return value
+
+    @field_validator("paypal_base_url")
+    @classmethod
+    def _reject_live_paypal(cls, value: str) -> str:
+        if value.rstrip("/") != "https://api-m.sandbox.paypal.com":
+            raise ValueError(
+                f"PAYPAL_BASE_URL must be the sandbox API (https://api-m.sandbox.paypal.com), got {value!r} — "
+                "live PayPal is never permitted in this deployment"
+            )
+        return value.rstrip("/")
 
 
 settings = Settings()
