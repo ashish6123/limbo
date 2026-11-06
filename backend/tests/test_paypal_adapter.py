@@ -145,7 +145,40 @@ async def test_retry_settlement_raises_while_refund_still_pending():
 
 
 @pytest.mark.asyncio
-async def test_capture_payment_is_not_implemented_yet():
+async def test_create_checkout_order_returns_id_and_buyer_approval_link():
+    def handler(request):
+        return httpx.Response(200, json={
+            "id": "ORDER1",
+            "links": [
+                {"rel": "self", "href": f"{SANDBOX}/v2/checkout/orders/ORDER1"},
+                {"rel": "payer-action", "href": "https://www.sandbox.paypal.com/checkoutnow?token=ORDER1"},
+            ],
+        })
+
+    adapter, calls = make_adapter(handler)
+    order_id, approve_url = await adapter.create_checkout_order("order_1", 1000, "https://example.com/return")
+
+    assert order_id == "ORDER1"
+    assert approve_url == "https://www.sandbox.paypal.com/checkoutnow?token=ORDER1"
+    sent = json.loads(calls[-1].content)
+    assert sent["intent"] == "CAPTURE"
+    assert sent["purchase_units"][0]["amount"] == {"value": "10.00", "currency_code": "USD"}
+
+
+@pytest.mark.asyncio
+async def test_capture_order_returns_the_capture_id_not_the_order_id():
+    adapter, calls = make_adapter(lambda r: httpx.Response(201, json={
+        "id": "ORDER1",
+        "purchase_units": [{"payments": {"captures": [{"id": "CAPTURE1", "status": "COMPLETED"}]}}],
+    }))
+
+    assert await adapter.capture_order("ORDER1") == "CAPTURE1"
+    assert calls[-1].url.path == "/v2/checkout/orders/ORDER1/capture"
+    assert calls[-1].headers["PayPal-Request-Id"] == "ORDER1:capture"
+
+
+@pytest.mark.asyncio
+async def test_capture_payment_needs_buyer_approval():
     adapter, _ = make_adapter(lambda r: httpx.Response(404))
     with pytest.raises(NotImplementedError):
         await adapter.capture_payment("order_1", 1000, "paypal")

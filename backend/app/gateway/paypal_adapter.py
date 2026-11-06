@@ -40,12 +40,9 @@ class PayPalAdapter(GatewayAdapter):
     Limbo's payment id for a PayPal payment is the *capture* id, not the order
     id: refunds and status lookups in Payments v2 are all keyed on the capture.
 
-    capture_payment is not implemented yet. Whether the sandbox can create a
-    captured payment purely server-side (Orders v2 with a sandbox card as
-    payment_source) or needs a buyer to approve the order, as Razorpay did in
-    ADR-018, is still to be confirmed against the real sandbox. Until then,
-    complete a sandbox checkout and bring the capture in with
-    fetch_existing_capture."""
+    capture_payment stays unimplemented, as with Razorpay in ADR-018: a buyer has
+    to approve an order before it can be captured. create_checkout_order returns
+    the approval link, and capture_order captures the order once it is approved."""
 
     def __init__(
         self,
@@ -87,10 +84,48 @@ class PayPalAdapter(GatewayAdapter):
 
     async def capture_payment(self, order_id: str, amount_paise: int, method: str) -> str:
         raise NotImplementedError(
-            "PayPalAdapter cannot create a captured payment yet: server-side sandbox "
-            "capture is still to be confirmed. Complete a sandbox checkout and call "
-            "fetch_existing_capture instead."
+            "PayPalAdapter cannot create a captured payment on its own: a buyer has to "
+            "approve the order. Use create_checkout_order, then capture_order."
         )
+
+    async def create_checkout_order(self, reference_id: str, amount_paise: int, return_url: str) -> tuple[str, str]:
+        """Creates an Orders v2 order. Returns (PayPal order id, buyer approval URL)."""
+        order = await self._request(
+            "POST",
+            "/v2/checkout/orders",
+            json={
+                "intent": "CAPTURE",
+                "purchase_units": [
+                    {
+                        "reference_id": reference_id,
+                        "amount": {"value": to_decimal_string(amount_paise), "currency_code": self._currency},
+                    }
+                ],
+                "payment_source": {
+                    "paypal": {
+                        "experience_context": {
+                            "user_action": "PAY_NOW",
+                            "return_url": return_url,
+                            "cancel_url": return_url,
+                        }
+                    }
+                },
+            },
+            headers={"PayPal-Request-Id": f"{reference_id}:order"},
+        )
+        approve_url = next(link["href"] for link in order["links"] if link["rel"] in ("payer-action", "approve"))
+        return order["id"], approve_url
+
+    async def capture_order(self, paypal_order_id: str) -> str:
+        """Captures a buyer-approved order. Returns the capture id, which is Limbo's
+        payment id for PayPal. Does not write to our ledger, like fetch_existing_capture."""
+        order = await self._request(
+            "POST",
+            f"/v2/checkout/orders/{paypal_order_id}/capture",
+            json={},
+            headers={"PayPal-Request-Id": f"{paypal_order_id}:capture"},
+        )
+        return order["purchase_units"][0]["payments"]["captures"][0]["id"]
 
     async def fetch_existing_capture(self, capture_id: str) -> dict:
         """Brings a real, externally-created sandbox capture into view. Does not
