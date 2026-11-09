@@ -8,7 +8,7 @@ import {
   createDemoOrder,
   demoStreamUrl,
   dropDemoWebhook,
-  formatRupees,
+  formatMoney,
   runFailureScenario,
 } from "@/lib/api";
 
@@ -23,6 +23,21 @@ const OUTCOME_COPY: Record<DemoScenario, { title: string; state: string }> = {
   replay: { title: "Recovery Complete", state: "Order confirmed via REPLAY_WEBHOOK" },
   refund: { title: "Refund Issued", state: "Payment auto-refunded via AUTO_REFUND" },
 };
+
+const STAGE_LABEL: Record<string, string> = {
+  gateway: "PayPal",
+  chaos: "Failure injected",
+  recon: "Reconciliation",
+  investigation: "Agent → PayPal API (read-only)",
+  diagnosis: "Agent diagnosis",
+  policy: "Policy engine",
+  outcome: "Outcome",
+  webhook: "Webhook",
+};
+
+function isPayPal(url: string | null | undefined): boolean {
+  return !!url && url.includes("paypal.com");
+}
 
 export default function DemoPage() {
   const [scenario, setScenario] = useState<DemoScenario>("replay");
@@ -149,7 +164,9 @@ export default function DemoPage() {
               ))}
             </div>
             <p className="mb-4 text-xs text-text-tertiary">
-              Fixed demo amount: {formatRupees(100_000)} · Premium Plan
+              <b>Make Test Payment</b> creates a real PayPal sandbox order you approve with a sandbox buyer account; Limbo then
+              captures it, drops the webhook on purpose, and lets the agent recover it. <b>Run Failure Scenario</b> does the same
+              with a scripted mock payment and needs no login.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
@@ -172,11 +189,26 @@ export default function DemoPage() {
 
         {step === "awaiting_checkout" && order && (
           <div className="rounded-xl border border-border-subtle bg-surface p-6">
-            <p className="mb-2 text-sm font-medium text-text-primary">Complete the real Razorpay test-mode checkout</p>
-            <p className="mb-4 text-sm text-text-secondary">
-              A checkout tab has opened. Use test card 4111 1111 1111 1111, any future expiry, any CVV. Once you&apos;ve
-              paid, come back and click continue.
-            </p>
+            {isPayPal(order.checkout_url) ? (
+              <>
+                <p className="mb-2 text-sm font-medium text-text-primary">
+                  Approve the real PayPal sandbox payment ({formatMoney(order.amount_paise, order.currency)})
+                </p>
+                <p className="mb-4 text-sm text-text-secondary">
+                  A PayPal checkout tab has opened. Log in with the sandbox buyer account listed in the README (or your own
+                  sandbox personal account) and click <b>Pay</b>. Then come back here: Limbo captures the payment, the
+                  merchant&apos;s webhook is dropped on purpose, and you watch the agent find and fix it.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mb-2 text-sm font-medium text-text-primary">Complete the real Razorpay test-mode checkout</p>
+                <p className="mb-4 text-sm text-text-secondary">
+                  A checkout tab has opened. Use test card 4111 1111 1111 1111, any future expiry, any CVV. Once you&apos;ve
+                  paid, come back and click continue.
+                </p>
+              </>
+            )}
             <a
               href={order.checkout_url ?? "#"}
               target="_blank"
@@ -205,10 +237,16 @@ export default function DemoPage() {
               {events.map((e) => (
                 <li key={e.id} className="rounded-lg border border-border-subtle p-3 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-text-primary">{e.stage}: {e.event}</span>
+                    <span className={`font-medium ${e.stage === "investigation" ? "text-money" : "text-text-primary"}`}>
+                      {STAGE_LABEL[e.stage] ?? e.stage}: <span className="font-mono text-xs">{e.event}</span>
+                    </span>
                     <span className="text-xs text-text-tertiary">{new Date(e.created_at).toLocaleTimeString()}</span>
                   </div>
-                  {e.reasoning && <p className="mt-1 text-text-tertiary">{e.reasoning}</p>}
+                  {e.reasoning && (
+                    <p className={`mt-1 break-words text-text-tertiary ${e.stage === "investigation" ? "font-mono text-xs" : ""}`}>
+                      {e.reasoning.length > 400 ? `${e.reasoning.slice(0, 400)}…` : e.reasoning}
+                    </p>
+                  )}
                 </li>
               ))}
               {step === "streaming" && events.length === 0 && (
@@ -220,7 +258,7 @@ export default function DemoPage() {
               <div className="mt-6 rounded-lg border border-money/30 bg-money-dim p-4">
                 <p className="text-sm font-semibold text-money">{OUTCOME_COPY[order.scenario].title}</p>
                 <p className="mt-1 text-sm text-text-secondary">{OUTCOME_COPY[order.scenario].state}</p>
-                <p className="mt-1 text-sm text-text-secondary">Amount: {formatRupees(order.amount_paise)}</p>
+                <p className="mt-1 text-sm text-text-secondary">Amount: {formatMoney(order.amount_paise, order.currency)}</p>
                 <p className="mt-1 text-sm text-text-secondary">Order: <span className="font-mono text-xs">{order.order_id}</span></p>
                 <div className="mt-3 flex items-center gap-4">
                   <a href="/" className="text-sm text-money underline">

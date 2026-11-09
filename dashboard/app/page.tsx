@@ -74,7 +74,24 @@ export default function Dashboard() {
           </div>
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Limbo</h1>
-            <p className="text-sm text-text-secondary">Agentic reconciliation and recovery for lost-in-limbo payments</p>
+            <p className="text-sm text-text-secondary">
+              AI reconciliation agent that finds captured PayPal payments the merchant never saw, and recovers them before they become disputes
+            </p>
+          </div>
+          <div className="ml-auto hidden items-center gap-2 sm:flex">
+            {summary && (
+              <>
+                <span className="rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs text-text-secondary">
+                  Gateway: {summary.gateway_mode === "paypal" ? "PayPal sandbox" : summary.gateway_mode}
+                </span>
+                <span className="rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs text-text-secondary">
+                  AI: {summary.ai_mode === "claude" ? "Claude investigator" : "deterministic fallback"}
+                </span>
+              </>
+            )}
+            <a href="/demo" className="rounded-lg bg-money px-3 py-1.5 text-sm font-semibold text-bg">
+              Live demo
+            </a>
           </div>
         </div>
       </header>
@@ -99,11 +116,11 @@ export default function Dashboard() {
         </section>
 
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Panel title={`Limbo queue (${limboQueue.length})`}>
+          <Panel title={`Limbo queue (${limboQueue.length})`} className="lg:col-span-2">
             <LimboQueueTable items={limboQueue} />
           </Panel>
 
-          <Panel title={`Exception queue (${exceptions.length})`}>
+          <Panel title={`Exception queue: escalated to a human (${exceptions.length})`} className="lg:col-span-2">
             <ExceptionQueue items={exceptions} />
           </Panel>
 

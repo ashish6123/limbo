@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.demo import router as demo_router
+from app.api.paypal_webhooks import router as paypal_webhook_router
 from app.api.routes import router as api_router
 from app.config import settings
 from app.models.base import Base, engine
@@ -38,6 +39,7 @@ app.add_middleware(
 
 app.include_router(api_router)
 app.include_router(demo_router)
+app.include_router(paypal_webhook_router)
 
 
 @app.get("/health")

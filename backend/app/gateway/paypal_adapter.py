@@ -82,6 +82,13 @@ class PayPalAdapter(GatewayAdapter):
         response.raise_for_status()
         return response.json()
 
+    async def get(self, method: str, path: str, **kwargs) -> dict:
+        """Read-only entry point handed to the investigator agent: anything but
+        GET is refused here, so no tool built on it can move money."""
+        if method.upper() != "GET":
+            raise PermissionError(f"read-only PayPal access cannot {method} {path}")
+        return await self._request("GET", path, **kwargs)
+
     async def capture_payment(self, order_id: str, amount_paise: int, method: str) -> str:
         raise NotImplementedError(
             "PayPalAdapter cannot create a captured payment on its own: a buyer has to "
@@ -98,6 +105,10 @@ class PayPalAdapter(GatewayAdapter):
                 "purchase_units": [
                     {
                         "reference_id": reference_id,
+                        # custom_id comes back on the capture and its webhooks,
+                        # which is how a PayPal event finds Limbo's order.
+                        "custom_id": reference_id,
+                        "description": "Limbo demo order",
                         "amount": {"value": to_decimal_string(amount_paise), "currency_code": self._currency},
                     }
                 ],

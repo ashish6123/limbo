@@ -10,12 +10,19 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: GATEWAY_MODE
-        value: razorpay
-      - key: RAZORPAY_KEY_ID
+        value: paypal
+      # PayPal sandbox app credentials (developer.paypal.com > Apps & Credentials, Sandbox).
+      - key: PAYPAL_CLIENT_ID
         sync: false
-      - key: RAZORPAY_KEY_SECRET
+      - key: PAYPAL_CLIENT_SECRET
         sync: false
-      - key: RAZORPAY_WEBHOOK_SECRET
+      # Webhook id from the sandbox app's Webhooks section, pointed at
+      # https://<limbo-api host>/webhooks/paypal. Leave blank to disable the receiver.
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: PAYPAL_CURRENCY
+        value: USD
+      - key: PUBLIC_DASHBOARD_URL
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
@@ -23,8 +30,9 @@ services:
         value: "30"
       - key: REFUND_SETTLEMENT_SLA_HOURS
         value: "72"
+      # All *_PAISE settings are integer minor units: cents in PayPal/USD mode.
       - key: MAX_AUTO_AMOUNT_PAISE
-        value: "500000"
+        value: "50000"
       - key: MAX_RETRY_ATTEMPTS
         value: "3"
       - key: CIRCUIT_BREAKER_FALSE_INTERVENTION_RATE
@@ -42,15 +50,28 @@ services:
       - key: DASHBOARD_API_KEY
         sync: false
       - key: DEMO_ORDER_AMOUNT_PAISE
-        value: "100000"
+        value: "1000"
       - key: DEMO_MAX_AMOUNT_PAISE
-        value: "100000"
+        value: "1000"
       - key: DEMO_SESSION_TTL_MINUTES
         value: "30"
       - key: DEMO_FULFILLABLE_WINDOW_SECONDS
         value: "20"
       - key: DEMO_RATE_LIMIT_PER_MINUTE
         value: "10"
+
+  - type: web
+    name: limbo-dashboard
+    runtime: docker
+    dockerfilePath: ./dashboard/Dockerfile
+    dockerContext: ./dashboard
+    plan: free
+    envVars:
+      # Baked into the Next.js build: the public URL of limbo-api, e.g. https://limbo-api.onrender.com
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_DASHBOARD_API_KEY
+        sync: false
 
 # No separate worker service: Render's free plan doesn't offer Background
 # Workers (paid plans only). RUN_EMBEDDED_SCHEDULER=true above runs the

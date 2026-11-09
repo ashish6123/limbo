@@ -1,4 +1,4 @@
-import { Summary, formatRupees } from "@/lib/api";
+import { Summary, formatMoney } from "@/lib/api";
 
 export function HeroMetrics({ summary }: { summary: Summary | null }) {
   return (
@@ -9,17 +9,17 @@ export function HeroMetrics({ summary }: { summary: Summary | null }) {
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-4">
         <HeroTile
           label="Money at risk"
-          value={summary ? formatRupees(summary.money_at_risk_paise) : null}
+          value={summary ? formatMoney(summary.money_at_risk_paise, summary.currency) : null}
           tone="risk"
         />
         <HeroTile
           label="Revenue recovered"
-          value={summary ? formatRupees(summary.revenue_recovered_paise) : null}
+          value={summary ? formatMoney(summary.revenue_recovered_paise, summary.currency) : null}
           tone="money"
         />
         <HeroTile
           label="Loss prevented"
-          value={summary ? formatRupees(summary.loss_prevented_paise) : null}
+          value={summary ? formatMoney(summary.loss_prevented_paise, summary.currency) : null}
           tone="money"
         />
         <HeroTile

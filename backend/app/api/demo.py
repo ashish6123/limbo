@@ -26,6 +26,7 @@ class DemoOrderResponse(BaseModel):
     token: str
     scenario: str
     amount_paise: int
+    currency: str
     checkout_url: str | None
 
 
@@ -41,12 +42,15 @@ class WebhookDropResponse(BaseModel):
 @router.post("/orders", response_model=DemoOrderResponse)
 async def create_demo_order(body: CreateOrderRequest) -> DemoOrderResponse:
     async with async_session() as session:
-        demo_session, checkout_url = await demo_service.create_order(session, settings, body.scenario)
+        demo_session, checkout_url = await demo_service.create_order(
+            session, settings, body.scenario, return_url=f"{settings.public_dashboard_url.rstrip('/')}/demo/return"
+        )
         return DemoOrderResponse(
             order_id=demo_session.order_id,
             token=demo_session.token,
             scenario=demo_session.scenario,
             amount_paise=settings.demo_order_amount_paise,
+            currency=demo_service.display_currency(settings),
             checkout_url=checkout_url,
         )
 
@@ -76,6 +80,7 @@ async def run_failure_scenario(body: CreateOrderRequest) -> DemoOrderResponse:
             token=demo_session.token,
             scenario=demo_session.scenario,
             amount_paise=settings.demo_order_amount_paise,
+            currency="INR",  # the scripted mock scenario always runs in the mock gateway's INR
             checkout_url=None,
         )
 

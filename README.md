@@ -1,8 +1,20 @@
 # Limbo
 
-Agentic reconciliation and recovery for payments stuck between "the gateway says it worked" and "the merchant says it didn't."
+**An AI reconciliation agent for PayPal merchants.** It finds payments PayPal captured but the merchant never saw, checks the facts with PayPal's own APIs, and recovers the money before the buyer opens a dispute.
 
-**Live:** [limbo-ochre.vercel.app](https://limbo-ochre.vercel.app) — dashboard with live totals, queue, and audit trail. [limbo-ochre.vercel.app/demo](https://limbo-ochre.vercel.app/demo) — pick a scenario and watch one payment go into limbo and recover in real time, via a real Razorpay test-mode checkout or a one-click scripted run.
+Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/) (see [What's new for the hackathon](#whats-new-for-the-paypal-ai-hackathon-after-1-oct-2026)). MIT licensed.
+
+**Live:** [limbo-ochre.vercel.app](https://limbo-ochre.vercel.app) (dashboard) · [limbo-ochre.vercel.app/demo](https://limbo-ochre.vercel.app/demo) (watch one PayPal sandbox payment go into limbo and recover, live). The API runs on Render's free tier, so the first click after a quiet spell can take ~40 s while it wakes.
+
+### Try it as a judge (2 minutes)
+
+1. Open **/demo** and pick a scenario.
+2. **Make Test Payment** creates a real PayPal sandbox order. Approve it in the PayPal tab with the sandbox buyer account below, then come back and click **I've completed the payment**.
+3. Limbo captures the payment through Orders v2, then drops the merchant's webhook on purpose. You then watch, streamed live from the audit log:
+   reconciliation detects the mismatch → the **Claude investigator calls PayPal's APIs (read-only)** to confirm the capture and check for disputes → it writes a diagnosis and a draft message to the buyer → the deterministic **policy engine** decides → a **real PayPal sandbox refund** is issued (or the order is completed by webhook replay).
+4. No PayPal login handy? **Run Failure Scenario** runs the same pipeline on a scripted mock payment.
+
+Sandbox buyer account for judging: see the Devpost submission's "Testing instructions" field (sandbox-only credentials, no real money).
 
 ## The problem
 
@@ -17,6 +29,38 @@ This is not a hypothetical. It's a real failure mode of asynchronous payment sys
 Limbo is an agentic system that continuously reconciles gateway payment records against merchant order records, classifies every mismatch into one of six states, diagnoses the root cause from observable evidence, and executes a bounded recovery action — complete the order, replay the webhook, auto-refund, or escalate to a human — with hard guardrails: idempotency, amount ceilings, retry limits, a circuit breaker, and an immutable audit trail.
 
 It reports measured money recovered across a synthetic 500-transaction batch, and has been verified end to end against one real Razorpay test-mode payment — real order, real webhook-drop simulation, real reconciliation, real refund executed via the live API.
+
+## What's new for the PayPal AI Hackathon (after 1 Oct 2026)
+
+Limbo existed before the hackathon as a Razorpay/mock-gateway prototype (last update 4 Sep 2026). Everything below was built during the submission period; `git log --since=2026-10-01` shows it.
+
+| Area | What was added |
+|---|---|
+| PayPal gateway | `backend/app/gateway/paypal_adapter.py`: OAuth2 client credentials, **Orders v2** create + capture, **Payments v2** capture lookup and refunds (with `PayPal-Request-Id` idempotency), refund status re-checks, amounts in USD minor units. `PAYPAL_BASE_URL` is locked to the sandbox; a live URL is rejected at startup. |
+| PayPal webhooks | `POST /webhooks/paypal` (`backend/app/api/paypal_webhooks.py`): every event is checked with **verify-webhook-signature**, de-duplicated on PayPal's event id, and mapped onto Limbo's ledger. Handles `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`, `CUSTOMER.DISPUTE.CREATED`. |
+| AI investigator | `backend/app/diagnosis/llm.py` + `paypal_tools.py`: Claude (`claude-opus-5-5`) runs a bounded tool loop with three **read-only** PayPal tools (`get_capture`, `get_refund`, `list_disputes`), then returns a structured diagnosis, recommended action and a draft buyer message. Each tool call is written to the audit trail and streamed to `/demo`. |
+| Dispute prevention | A `CUSTOMER.DISPUTE.CREATED` on a tracked payment is escalated to a human at once, with a Claude-drafted dispute response built only from the audit trail (`backend/app/diagnosis/dispute.py`). |
+| Live demo | `/demo` now runs on real PayPal sandbox orders: approve → capture → dropped webhook → agent → policy → real refund. |
+| Dashboard | Limbo queue rebuilt on **AG Grid** (sort, filter, quick search, pagination), currency-aware amounts, gateway/AI mode badges. |
+| Deploy | `render.yaml` Blueprint now deploys both the API and the dashboard on **Render** in PayPal mode. |
+| Tests | `backend/tests/test_paypal_adapter.py`, `backend/tests/test_paypal_agent.py`: fake PayPal sandbox + fake Claude, covering the tool scope guard, the investigator loop, the full PayPal demo lifecycle and webhook dispute escalation. 74 tests pass. |
+
+### Why the AI can't move money
+
+The agent investigates and explains; it never acts. Its PayPal access goes through `PayPalAdapter.get`, which refuses anything but HTTP GET, and each tool only accepts the capture id under investigation (or refund ids PayPal itself links to it), so text inside an API response can't steer it toward other data. The concluding turn runs with `tool_choice: none`. What actually happens to the money is decided by the deterministic `PolicyEngine`: idempotency keys, an amount ceiling, retry limits, a circuit breaker and `DRY_RUN`. Without an `ANTHROPIC_API_KEY`, diagnosis falls back to a deterministic classifier and recovery still works.
+
+### Run PayPal mode locally
+
+1. In the [PayPal developer dashboard](https://developer.paypal.com/dashboard/applications/sandbox), create a sandbox REST app and note its client id and secret. Sandbox test accounts (a business and a personal buyer) are under **Testing Tools → Sandbox Accounts**.
+2. In `backend/.env`: `GATEWAY_MODE=paypal`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_CURRENCY=USD`, `DEMO_ORDER_AMOUNT_PAISE=1000`, `DEMO_MAX_AMOUNT_PAISE=1000` (minor units, so $10.00), and optionally `ANTHROPIC_API_KEY`.
+3. `make up && make api` and `make dashboard`, then open `http://localhost:3000/demo`.
+4. Optional webhooks: expose the API (e.g. a tunnel), add a webhook in the sandbox app pointing at `https://<host>/webhooks/paypal` for the four events above, and set `PAYPAL_WEBHOOK_ID`. The dashboard's Webhooks Simulator works for testing.
+
+Script-only path, without the dashboard: `cd backend && python -m scripts.paypal_manual_checkout`, approve the printed link, then `python -m scripts.verify_paypal <order_id> <paypal_order_id>`.
+
+### Built with
+
+PayPal Orders v2, Payments v2 (captures, refunds), Disputes API (read), Webhooks + verify-webhook-signature, all on the PayPal sandbox · Claude API (`claude-opus-5-5`, tool use + structured outputs) · FastAPI, SQLAlchemy, Postgres · Next.js 14, AG Grid Community, Recharts · Render (API + dashboard), Supabase Postgres.
 
 ## Architecture
 

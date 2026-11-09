@@ -34,6 +34,8 @@ class Settings(BaseSettings):
 
     cors_allow_origins: str = "http://localhost:3000"
     dashboard_api_key: str = ""
+    # Where PayPal sends the buyer back after approving a demo order.
+    public_dashboard_url: str = "http://localhost:3000"
 
     demo_order_amount_paise: int = 100_000
     demo_max_amount_paise: int = 100_000
