@@ -1,7 +1,9 @@
 import secrets
 import uuid
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import razorpay
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +15,7 @@ from app.config import Settings
 from app.diagnosis.service import DiagnosisEngine
 from app.gateway.factory import build_gateway_adapter
 from app.gateway.mock import MockGatewayAdapter
+from app.gateway.paypal_adapter import PayPalAdapter, to_minor_units
 from app.gateway.schemas import PaymentEntity, WebhookPayload
 from app.merchant.service import MerchantService
 from app.models.chaos_injection import ChaosInjection
@@ -48,9 +51,27 @@ class DemoStateError(Exception):
 
 
 def _is_test_mode(settings: Settings) -> bool:
-    return settings.gateway_mode == "mock" or (
-        settings.gateway_mode == "razorpay" and settings.razorpay_key_id.startswith("rzp_test_")
+    # PayPal is always test mode here: Settings rejects any base URL but the sandbox.
+    return (
+        settings.gateway_mode in ("mock", "paypal")
+        or (settings.gateway_mode == "razorpay" and settings.razorpay_key_id.startswith("rzp_test_"))
     )
+
+
+def display_currency(settings: Settings) -> str:
+    return settings.paypal_currency if settings.gateway_mode == "paypal" else "INR"
+
+
+@asynccontextmanager
+async def paypal_adapter(db: AsyncSession, settings: Settings):
+    async def _no_delivery(payload):
+        pass
+
+    async with httpx.AsyncClient(base_url=settings.paypal_base_url, timeout=30.0) as http:
+        yield PayPalAdapter(
+            db, http, settings.paypal_client_id, settings.paypal_client_secret, _no_delivery,
+            currency=settings.paypal_currency,
+        )
 
 
 def _demo_can_execute(settings: Settings, amount_paise: int) -> bool:
@@ -68,7 +89,7 @@ async def get_session(db: AsyncSession, order_id: str, token: str) -> DemoSessio
 
 
 async def create_order(
-    db: AsyncSession, settings: Settings, scenario: str, force_mock: bool = False
+    db: AsyncSession, settings: Settings, scenario: str, force_mock: bool = False, return_url: str | None = None
 ) -> tuple[DemoSession, str | None]:
     """Creates a demo order. In GATEWAY_MODE=razorpay, also creates a real
     Razorpay test-mode Payment Link (the same proven mechanism as
@@ -85,7 +106,7 @@ async def create_order(
     time_provider = SystemTimeProvider()
 
     merchant = MerchantService(db, time_provider)
-    await merchant.create_order(order_id, amount_paise)
+    await merchant.create_order(order_id, amount_paise, currency=display_currency(settings) if not force_mock else "INR")
 
     demo_session = DemoSession(
         token=token,
@@ -110,6 +131,15 @@ async def create_order(
         )
         demo_session.gateway_reference = link["id"]
         checkout_url = link["short_url"]
+    elif settings.gateway_mode == "paypal" and not force_mock:
+        # A real PayPal sandbox order. The evaluator approves it with a sandbox
+        # buyer account; PayPal then redirects back to the demo page, which
+        # calls drop_webhook to capture it (ADR-018 pattern, now for PayPal).
+        async with paypal_adapter(db, settings) as gateway:
+            paypal_order_id, checkout_url = await gateway.create_checkout_order(
+                order_id, amount_paise, return_url or "https://example.com/limbo-paypal-return"
+            )
+        demo_session.gateway_reference = paypal_order_id
     else:
         async def _no_delivery(payload):
             pass  # the demo always simulates a dropped webhook; see drop_webhook
@@ -151,6 +181,36 @@ async def drop_webhook(db: AsyncSession, settings: Settings, demo_session: DemoS
         db.add(payment)
         await db.flush()
 
+    if payment is None and settings.gateway_mode == "paypal" and demo_session.gateway_reference:
+        async with paypal_adapter(db, settings) as gateway:
+            try:
+                capture_id = await gateway.capture_order(demo_session.gateway_reference)
+            except httpx.HTTPStatusError as exc:
+                raise DemoStateError(
+                    f"PayPal could not capture order {demo_session.gateway_reference!r} "
+                    f"(HTTP {exc.response.status_code}) — approve it with the sandbox buyer account first"
+                ) from exc
+            capture = await gateway.fetch_existing_capture(capture_id)
+        payment = Payment(
+            id=capture_id,
+            order_id=demo_session.order_id,
+            amount_paise=to_minor_units(capture["amount"]["value"]),
+            gateway_status=PaymentGatewayStatus.CAPTURED,
+            method="paypal",
+            captured_at=datetime.fromisoformat(capture["create_time"].replace("Z", "+00:00")),
+        )
+        db.add(payment)
+        await db.flush()
+        await audit.record(
+            db,
+            stage="gateway",
+            event="paypal.capture.completed",
+            order_id=demo_session.order_id,
+            payment_id=capture_id,
+            inputs={"paypal_order_id": demo_session.gateway_reference, "status": capture["status"]},
+            reasoning=f"Real PayPal sandbox capture {capture_id} for {capture['amount']['value']} {capture['amount']['currency_code']}.",
+        )
+
     if payment is None:
         raise DemoStateError(f"order {demo_session.order_id!r} has no captured payment to drop a webhook for")
 
@@ -160,7 +220,7 @@ async def drop_webhook(db: AsyncSession, settings: Settings, demo_session: DemoS
         id=payment.id,
         order_id=demo_session.order_id,
         amount=payment.amount_paise,
-        currency="INR",
+        currency=display_currency(settings) if payment.method == "paypal" else "INR",
         status=PaymentGatewayStatus.CAPTURED.value,
         method=payment.method,
     )
@@ -206,21 +266,41 @@ async def drive_scenario(db: AsyncSession, settings: Settings, demo_session: Dem
     if result is None:
         return
 
-    diagnosis = DiagnosisEngine(
-        db,
-        fulfillable_window_minutes=settings.order_fulfillable_window_minutes,
-        refund_sla_hours=settings.refund_settlement_sla_hours,
-        anthropic_api_key=settings.anthropic_api_key,
-        time_provider=time_provider,
-    )
-    await diagnosis.diagnose(order_id)
+    async with AsyncExitStack() as stack:
+        paypal_get = None
+        if settings.gateway_mode == "paypal" and payment.method == "paypal":
+            paypal_get = (await stack.enter_async_context(paypal_adapter(db, settings))).get
+        diagnosis = DiagnosisEngine(
+            db,
+            fulfillable_window_minutes=settings.order_fulfillable_window_minutes,
+            refund_sla_hours=settings.refund_settlement_sla_hours,
+            anthropic_api_key=settings.anthropic_api_key,
+            time_provider=time_provider,
+            paypal_get=paypal_get,
+            commit_tool_calls=True,
+        )
+        await diagnosis.diagnose(order_id)
     await db.commit()
 
     async def webhook_sink(payload):
         pass  # completion webhooks from policy-triggered gateway calls are not re-delivered to ourselves
 
-    gateway = build_gateway_adapter(settings, db, webhook_sink, time_provider)
     order = await db.get(Order, order_id)
+    async with AsyncExitStack() as stack:
+        if payment.method == "paypal":
+            gateway = await stack.enter_async_context(paypal_adapter(db, settings))
+        elif settings.gateway_mode == "paypal":
+            gateway = MockGatewayAdapter(db, webhook_sink, time_provider)  # scripted mock payment, never sent to PayPal
+        else:
+            gateway = build_gateway_adapter(settings, db, webhook_sink, time_provider)
+        await _decide_and_act(db, settings, order_id, order, payment, result, merchant, gateway, time_provider, fulfillable_window)
+    await db.commit()
+
+    demo_session.status = "complete"
+    await db.commit()
+
+
+async def _decide_and_act(db, settings, order_id, order, payment, result, merchant, gateway, time_provider, fulfillable_window):
     within_window = time_provider.now() - payment.captured_at < fulfillable_window
 
     policy = PolicyEngine(
@@ -236,10 +316,6 @@ async def drive_scenario(db: AsyncSession, settings: Settings, demo_session: Dem
     if action is not None:
         executor = await build_executor(action, order_id, payment, order.amount_paise, merchant, gateway, db)
         await policy.act(order_id, payment.id, action, order.amount_paise, executor)
-    await db.commit()
-
-    demo_session.status = "complete"
-    await db.commit()
 
 
 async def cleanup_expired(db: AsyncSession) -> int:

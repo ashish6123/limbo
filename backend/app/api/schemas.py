@@ -11,6 +11,9 @@ class SummaryResponse(BaseModel):
     false_intervention_rate: float
     circuit_breaker_threshold: float
     executed_action_count: int
+    currency: str = "INR"
+    gateway_mode: str = "mock"
+    ai_mode: str = "deterministic"
 
 
 class LimboQueueItem(BaseModel):
@@ -18,6 +21,7 @@ class LimboQueueItem(BaseModel):
     payment_id: str | None
     state: str
     amount_paise: int
+    currency: str = "INR"
     classified_at: datetime
 
 

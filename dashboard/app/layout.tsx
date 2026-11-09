@@ -29,7 +29,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <div className="bg-risk-dim px-4 py-1.5 text-center text-xs font-medium text-risk">
-          Razorpay Test Mode — no real money is moved.
+          PayPal Sandbox — test mode only, no real money is moved.
         </div>
         {children}
       </body>

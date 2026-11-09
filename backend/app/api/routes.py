@@ -83,6 +83,9 @@ async def get_summary(session: AsyncSession = Depends(get_session)) -> SummaryRe
         false_intervention_rate=false_intervention_rate,
         circuit_breaker_threshold=settings.circuit_breaker_false_intervention_rate,
         executed_action_count=len(executed_actions),
+        currency=settings.paypal_currency if settings.gateway_mode == "paypal" else "INR",
+        gateway_mode=settings.gateway_mode,
+        ai_mode="claude" if settings.anthropic_api_key else "deterministic",
     )
 
 
@@ -103,6 +106,7 @@ async def get_limbo_queue(session: AsyncSession = Depends(get_session)) -> list[
             payment_id=r.payment_id,
             state=r.state.value,
             amount_paise=orders_by_id[r.order_id].amount_paise if r.order_id in orders_by_id else 0,
+            currency=orders_by_id[r.order_id].currency if r.order_id in orders_by_id else "INR",
             classified_at=r.classified_at,
         )
         for r in sorted(limbo_results, key=lambda r: r.classified_at, reverse=True)

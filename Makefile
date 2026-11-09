@@ -33,6 +33,9 @@ verify-phase5:
 razorpay-checkout:
 	cd backend && python -m scripts.razorpay_manual_checkout
 
+paypal-checkout:
+	cd backend && python -m scripts.paypal_manual_checkout
+
 eval:
 	cd evals && python generator.py --count 500 --injection-rate 0.30 --seed 42 --out scenarios/batch_500.jsonl
 	cd evals && python runner.py --scenarios scenarios/batch_500.jsonl --out results/report

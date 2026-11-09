@@ -9,6 +9,9 @@ export interface Summary {
   false_intervention_rate: number;
   circuit_breaker_threshold: number;
   executed_action_count: number;
+  currency: string;
+  gateway_mode: string;
+  ai_mode: string;
 }
 
 export interface LimboQueueItem {
@@ -16,6 +19,7 @@ export interface LimboQueueItem {
   payment_id: string | null;
   state: string;
   amount_paise: number;
+  currency: string;
   classified_at: string;
 }
 
@@ -74,6 +78,7 @@ export interface DemoOrder {
   token: string;
   scenario: DemoScenario;
   amount_paise: number;
+  currency: string;
   checkout_url: string | null;
 }
 
@@ -110,6 +115,14 @@ export function demoStreamUrl(orderId: string, token: string): string {
   return `${API_BASE_URL}/api/demo/${orderId}/stream?token=${encodeURIComponent(token)}`;
 }
 
-export function formatRupees(paise: number): string {
-  return (paise / 100).toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
+/** Amounts arrive in integer minor units (paise for INR, cents for USD). */
+export function formatMoney(minor: number, currency: string = "INR"): string {
+  const locale = currency === "INR" ? "en-IN" : "en-US";
+  return (minor / 100).toLocaleString(locale, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: currency === "INR" ? 0 : 2,
+  });
 }
+
+export const formatRupees = (paise: number) => formatMoney(paise, "INR");

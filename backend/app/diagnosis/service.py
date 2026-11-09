@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import writer as audit
 from app.diagnosis.deterministic import diagnose_deterministic
 from app.diagnosis.llm import diagnose_llm
+from app.diagnosis.paypal_tools import PayPalGet, PayPalReadOnlyTools
 from app.diagnosis.schemas import DiagnosisResult, EvidenceBundle, RefundEvidence, WebhookEventEvidence
 from app.models.diagnosis_record import DiagnosisRecord
 from app.models.order import Order
@@ -29,7 +30,13 @@ class DiagnosisEngine:
         refund_sla_hours: int,
         anthropic_api_key: str = "",
         time_provider: TimeProvider = SystemTimeProvider(),
+        paypal_get: PayPalGet | None = None,
+        commit_tool_calls: bool = False,
     ):
+        # paypal_get gives the investigator read-only PayPal lookups (GATEWAY_MODE=paypal).
+        # commit_tool_calls makes each tool step visible to the live demo stream at once.
+        self._paypal_get = paypal_get
+        self._commit_tool_calls = commit_tool_calls
         self._session = session
         self._fulfillable_window_minutes = fulfillable_window_minutes
         self._refund_sla_hours = refund_sla_hours
@@ -86,10 +93,31 @@ class DiagnosisEngine:
         evidence = await self.build_evidence(order_id)
 
         result = None
+        investigation = None
         source = "deterministic"
         if self._llm_client is not None:
-            result = await diagnose_llm(evidence, self._llm_client)
-            source = "llm"
+            tools = None
+            if self._paypal_get is not None and evidence.payment_id:
+                tools = PayPalReadOnlyTools(self._paypal_get, evidence.payment_id)
+
+            async def record_tool_call(name: str, tool_input: dict, text: str, is_error: bool) -> None:
+                await audit.record(
+                    self._session,
+                    stage="investigation",
+                    event=f"paypal.{name}" + (".error" if is_error else ""),
+                    order_id=order_id,
+                    payment_id=evidence.payment_id,
+                    inputs={"tool": name, "input": tool_input},
+                    reasoning=text[:1000],
+                    created_at=self._time.now(),
+                )
+                if self._commit_tool_calls:
+                    await self._session.commit()
+
+            outcome = await diagnose_llm(evidence, self._llm_client, tools, record_tool_call)
+            if outcome is not None:
+                result, investigation = outcome
+                source = "llm+paypal_tools" if tools is not None else "llm"
 
         if result is None:
             result = diagnose_deterministic(evidence)
@@ -113,7 +141,16 @@ class DiagnosisEngine:
             event=result.root_cause_class.value,
             order_id=order_id,
             payment_id=evidence.payment_id,
-            inputs={"source": source, "confidence": result.confidence},
+            inputs={
+                "source": source,
+                "confidence": result.confidence,
+                "recommended_action": result.recommended_action,
+                **(
+                    {"customer_message_draft": investigation.customer_message, "dispute_open": investigation.dispute_open}
+                    if investigation is not None
+                    else {}
+                ),
+            },
             reasoning=result.human_readable_narrative,
             created_at=self._time.now(),
         )

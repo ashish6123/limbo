@@ -181,3 +181,12 @@ The first real Phase 6 run executed a real refund successfully (`status: EXECUTE
 Fixed: `RazorpayAdapter.create_refund` now writes a real `Refund` row using the actual API response (id, amount, status, timestamps), and only marks the underlying `Payment` `REFUNDED` once the cumulative `amount_refunded` from Razorpay actually covers the full captured amount — a partial refund (as happened here, capped by ADR-019) correctly leaves the payment `CAPTURED` with money still outstanding, rather than being marked as if fully resolved.
 
 This bug was only found by running the full real lifecycle end to end — no unit test exercises the real Razorpay API, and the mock adapter's equivalent code path was already correct, so nothing in the existing test suite could have caught this divergence between the two adapters.
+
+
+## ADR-028: The PayPal investigator reads, the policy engine acts
+
+**Context.** For the PayPal AI Hackathon the diagnosis step became a tool-using agent that checks a suspect transaction against PayPal itself (capture status, linked refunds, open disputes) before concluding. Giving an LLM live payment-API access raises the obvious risk: a confused or manipulated agent moving money.
+
+**Decision.** The agent gets three read-only tools built on `PayPalAdapter.get`, which refuses every method but GET. Each tool is scoped to the capture under investigation; refund ids are allowed only after PayPal itself lists them on that capture. The loop is capped at six turns and the final, structured answer is requested with `tool_choice: none`. Every tool call is appended to the audit log. Refunds, replays and escalations still come only from `PolicyEngine`, under the existing idempotency, amount, retry, circuit-breaker and dry-run guardrails (ADR-017 unchanged). Any LLM failure, refusal or missing key falls back to the deterministic classifier.
+
+**Consequences.** The agent adds evidence and explanation (including a draft buyer message and, for disputes, a draft response for a human), never authority. Judges and merchants can audit exactly which PayPal calls informed each decision.
