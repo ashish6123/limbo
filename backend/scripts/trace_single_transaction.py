@@ -116,7 +116,7 @@ async def main() -> None:
             session,
             fulfillable_window_minutes=settings.order_fulfillable_window_minutes,
             refund_sla_hours=settings.refund_settlement_sla_hours,
-            anthropic_api_key=settings.anthropic_api_key,
+            gemini_api_key=settings.gemini_api_key,
             time_provider=time_provider,
         )
         result, source = await diagnosis.diagnose(order_id)

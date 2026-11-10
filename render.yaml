@@ -24,7 +24,7 @@ services:
         value: USD
       - key: PUBLIC_DASHBOARD_URL
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: ORDER_FULFILLABLE_WINDOW_MINUTES
         value: "30"

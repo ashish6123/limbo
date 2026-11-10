@@ -6,7 +6,7 @@ The diagnosis module itself never reads chaos_injections (see docs/decisions.md
 ADR-007) — only this verification script does, and only to score the results
 after diagnosis has already run.
 
-If ANTHROPIC_API_KEY is unset, every case falls back to the deterministic
+If GEMINI_API_KEY is unset, every case falls back to the deterministic
 classifier and this is reported explicitly rather than silently.
 
 Run with Postgres up (docker-compose up postgres) and DATABASE_URL pointed at it:
@@ -63,7 +63,7 @@ async def main() -> None:
             session,
             fulfillable_window_minutes=settings.order_fulfillable_window_minutes,
             refund_sla_hours=settings.refund_settlement_sla_hours,
-            anthropic_api_key=settings.anthropic_api_key,
+            gemini_api_key=settings.gemini_api_key,
             time_provider=time_provider,
         )
 
@@ -93,17 +93,17 @@ async def main() -> None:
 
     print(f"Diagnosis accuracy vs chaos ground truth: {correct}/{total} = {accuracy:.1%}")
     print(f"Sources used: {dict(sources_used)}")
-    if settings.anthropic_api_key:
-        print("ANTHROPIC_API_KEY is set - LLM path was exercised.")
+    if settings.gemini_api_key:
+        print("GEMINI_API_KEY is set - LLM path was exercised.")
     else:
-        print("ANTHROPIC_API_KEY is not set - every case used the deterministic fallback. LLM path unexercised.")
+        print("GEMINI_API_KEY is not set - every case used the deterministic fallback. LLM path unexercised.")
 
     if mismatches:
         print(f"\n{len(mismatches)} mismatch(es):")
         for m in mismatches:
             print(f"  - {m}")
 
-    if accuracy < 1.0 and not settings.anthropic_api_key:
+    if accuracy < 1.0 and not settings.gemini_api_key:
         # The deterministic fallback is a rule-based mirror of the chaos engine's
         # own construction, so on this synthetic batch it should be exact. Any
         # miss here is a real bug, not "LLM noise" — fail loud.

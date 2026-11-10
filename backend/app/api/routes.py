@@ -85,7 +85,7 @@ async def get_summary(session: AsyncSession = Depends(get_session)) -> SummaryRe
         executed_action_count=len(executed_actions),
         currency=settings.paypal_currency if settings.gateway_mode == "paypal" else "INR",
         gateway_mode=settings.gateway_mode,
-        ai_mode="claude" if settings.anthropic_api_key else "deterministic",
+        ai_mode="gemini" if settings.gemini_api_key else "deterministic",
     )
 
 

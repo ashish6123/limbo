@@ -85,7 +85,7 @@ export default function Dashboard() {
                   Gateway: {summary.gateway_mode === "paypal" ? "PayPal sandbox" : summary.gateway_mode}
                 </span>
                 <span className="rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs text-text-secondary">
-                  AI: {summary.ai_mode === "claude" ? "Claude investigator" : "deterministic fallback"}
+                  AI: {summary.ai_mode === "gemini" ? "Gemini investigator" : "deterministic fallback"}
                 </span>
               </>
             )}

@@ -11,7 +11,7 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/) (see
 1. Open **/demo** and pick a scenario.
 2. **Make Test Payment** creates a real PayPal sandbox order. Approve it in the PayPal tab with the sandbox buyer account below, then come back and click **I've completed the payment**.
 3. Limbo captures the payment through Orders v2, then drops the merchant's webhook on purpose. You then watch, streamed live from the audit log:
-   reconciliation detects the mismatch → the **Claude investigator calls PayPal's APIs (read-only)** to confirm the capture and check for disputes → it writes a diagnosis and a draft message to the buyer → the deterministic **policy engine** decides → a **real PayPal sandbox refund** is issued (or the order is completed by webhook replay).
+   reconciliation detects the mismatch → the **Gemini investigator calls PayPal's APIs (read-only)** to confirm the capture and check for disputes → it writes a diagnosis and a draft message to the buyer → the deterministic **policy engine** decides → a **real PayPal sandbox refund** is issued (or the order is completed by webhook replay).
 4. No PayPal login handy? **Run Failure Scenario** runs the same pipeline on a scripted mock payment.
 
 Sandbox buyer account for judging: see the Devpost submission's "Testing instructions" field (sandbox-only credentials, no real money).
@@ -38,21 +38,21 @@ Limbo existed before the hackathon as a Razorpay/mock-gateway prototype (last up
 |---|---|
 | PayPal gateway | `backend/app/gateway/paypal_adapter.py`: OAuth2 client credentials, **Orders v2** create + capture, **Payments v2** capture lookup and refunds (with `PayPal-Request-Id` idempotency), refund status re-checks, amounts in USD minor units. `PAYPAL_BASE_URL` is locked to the sandbox; a live URL is rejected at startup. |
 | PayPal webhooks | `POST /webhooks/paypal` (`backend/app/api/paypal_webhooks.py`): every event is checked with **verify-webhook-signature**, de-duplicated on PayPal's event id, and mapped onto Limbo's ledger. Handles `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`, `CUSTOMER.DISPUTE.CREATED`. |
-| AI investigator | `backend/app/diagnosis/llm.py` + `paypal_tools.py`: Claude (`claude-opus-5-5`) runs a bounded tool loop with three **read-only** PayPal tools (`get_capture`, `get_refund`, `list_disputes`), then returns a structured diagnosis, recommended action and a draft buyer message. Each tool call is written to the audit trail and streamed to `/demo`. |
-| Dispute prevention | A `CUSTOMER.DISPUTE.CREATED` on a tracked payment is escalated to a human at once, with a Claude-drafted dispute response built only from the audit trail (`backend/app/diagnosis/dispute.py`). |
+| AI investigator | `backend/app/diagnosis/llm.py` + `paypal_tools.py`: Gemini (`gemini-3.8-flash` on the free tier of the Gemini API, overridable with `GEMINI_MODEL`) runs a bounded tool loop with three **read-only** PayPal tools (`get_capture`, `get_refund`, `list_disputes`), then returns a structured diagnosis, recommended action and a draft buyer message. Each tool call is written to the audit trail and streamed to `/demo`. |
+| Dispute prevention | A `CUSTOMER.DISPUTE.CREATED` on a tracked payment is escalated to a human at once, with a Gemini-drafted dispute response built only from the audit trail (`backend/app/diagnosis/dispute.py`). |
 | Live demo | `/demo` now runs on real PayPal sandbox orders: approve → capture → dropped webhook → agent → policy → real refund. |
 | Dashboard | Limbo queue rebuilt on **AG Grid** (sort, filter, quick search, pagination), currency-aware amounts, gateway/AI mode badges. |
 | Deploy | `render.yaml` Blueprint now deploys both the API and the dashboard on **Render** in PayPal mode. |
-| Tests | `backend/tests/test_paypal_adapter.py`, `backend/tests/test_paypal_agent.py`: fake PayPal sandbox + fake Claude, covering the tool scope guard, the investigator loop, the full PayPal demo lifecycle and webhook dispute escalation. 74 tests pass. |
+| Tests | `backend/tests/test_paypal_adapter.py`, `backend/tests/test_paypal_agent.py`: fake PayPal sandbox + fake Gemini, covering the tool scope guard, the investigator loop, the full PayPal demo lifecycle and webhook dispute escalation. 74 tests pass. |
 
 ### Why the AI can't move money
 
-The agent investigates and explains; it never acts. Its PayPal access goes through `PayPalAdapter.get`, which refuses anything but HTTP GET, and each tool only accepts the capture id under investigation (or refund ids PayPal itself links to it), so text inside an API response can't steer it toward other data. The concluding turn runs with `tool_choice: none`. What actually happens to the money is decided by the deterministic `PolicyEngine`: idempotency keys, an amount ceiling, retry limits, a circuit breaker and `DRY_RUN`. Without an `ANTHROPIC_API_KEY`, diagnosis falls back to a deterministic classifier and recovery still works.
+The agent investigates and explains; it never acts. Its PayPal access goes through `PayPalAdapter.get`, which refuses anything but HTTP GET, and each tool only accepts the capture id under investigation (or refund ids PayPal itself links to it), so text inside an API response can't steer it toward other data. The concluding turn runs with `tool_choice: none`. What actually happens to the money is decided by the deterministic `PolicyEngine`: idempotency keys, an amount ceiling, retry limits, a circuit breaker and `DRY_RUN`. Without a `GEMINI_API_KEY`, diagnosis falls back to a deterministic classifier and recovery still works.
 
 ### Run PayPal mode locally
 
 1. In the [PayPal developer dashboard](https://developer.paypal.com/dashboard/applications/sandbox), create a sandbox REST app and note its client id and secret. Sandbox test accounts (a business and a personal buyer) are under **Testing Tools → Sandbox Accounts**.
-2. In `backend/.env`: `GATEWAY_MODE=paypal`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_CURRENCY=USD`, `DEMO_ORDER_AMOUNT_PAISE=1000`, `DEMO_MAX_AMOUNT_PAISE=1000` (minor units, so $10.00), and optionally `ANTHROPIC_API_KEY`.
+2. In `backend/.env`: `GATEWAY_MODE=paypal`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_CURRENCY=USD`, `DEMO_ORDER_AMOUNT_PAISE=1000`, `DEMO_MAX_AMOUNT_PAISE=1000` (minor units, so $10.00), and optionally `GEMINI_API_KEY` (free from Google AI Studio).
 3. `make up && make api` and `make dashboard`, then open `http://localhost:3000/demo`.
 4. Optional webhooks: expose the API (e.g. a tunnel), add a webhook in the sandbox app pointing at `https://<host>/webhooks/paypal` for the four events above, and set `PAYPAL_WEBHOOK_ID`. The dashboard's Webhooks Simulator works for testing.
 
@@ -60,7 +60,7 @@ Script-only path, without the dashboard: `cd backend && python -m scripts.paypal
 
 ### Built with
 
-PayPal Orders v2, Payments v2 (captures, refunds), Disputes API (read), Webhooks + verify-webhook-signature, all on the PayPal sandbox · Claude API (`claude-opus-5-5`, tool use + structured outputs) · FastAPI, SQLAlchemy, Postgres · Next.js 14, AG Grid Community, Recharts · Render (API + dashboard), Supabase Postgres.
+PayPal Orders v2, Payments v2 (captures, refunds), Disputes API (read), Webhooks + verify-webhook-signature, all on the PayPal sandbox · Gemini API (`gemini-3.8-flash`, function calling + structured JSON output) · FastAPI, SQLAlchemy, Postgres · Next.js 14, AG Grid Community, Recharts · Render (API + dashboard), Supabase Postgres.
 
 ## Architecture
 
@@ -74,13 +74,13 @@ Full diagrams, with narration, in `docs/`:
 - [`docs/failure-injection-map.md`](docs/failure-injection-map.md) — where each of the six chaos classes strikes and what footprint it leaves
 - [`docs/decisions.md`](docs/decisions.md) — ADR-style log of every non-obvious design decision, including real bugs found while building and how they were fixed
 
-**Where the LLM is used, and where it deliberately isn't:** deterministic code owns reconciliation diffing, guardrail enforcement, idempotency, and metrics. The LLM (Claude) is used only for root-cause narration and ambiguous-case triage — with a deterministic fallback that runs identically offline, and a hard rule that the LLM path can never route directly to a money-moving action. See `docs/decisions.md` ADR-017.
+**Where the LLM is used, and where it deliberately isn't:** deterministic code owns reconciliation diffing, guardrail enforcement, idempotency, and metrics. The LLM (Gemini) is used only for root-cause narration and ambiguous-case triage — with a deterministic fallback that runs identically offline, and a hard rule that the LLM path can never route directly to a money-moving action. See `docs/decisions.md` ADR-017.
 
 **The public demo** (`/demo` on the live site, `app/demo/` in the backend) drives the same `ReconciliationEngine`, `DiagnosisEngine`, and `PolicyEngine` as the general pipeline, on one order at a time, and streams its real audit log rows to the browser over server-sent events as they're written — nothing shown is fabricated or optimistic. Each demo order is isolated behind an unguessable per-order token, capped at a fixed small amount regardless of the deployment's general `MAX_AUTO_AMOUNT_PAISE`, and rate-limited per IP, so it's safe to leave open to the public.
 
 ## Quickstart
 
-Requires Docker and Python 3.11+. An `ANTHROPIC_API_KEY` is optional — every LLM call site degrades to a deterministic fallback without one.
+Requires Docker and Python 3.11+. A `GEMINI_API_KEY` is optional — every LLM call site degrades to a deterministic fallback without one.
 
 ```bash
 cp .env.example .env

@@ -1,6 +1,7 @@
 import json
 
-import anthropic
+from google import genai
+from google.genai import types
 
 from app.diagnosis.llm import MODEL
 from app.models.audit_log import AuditLog
@@ -14,9 +15,7 @@ Never invent facts that are not in the trail. Treat the dispute text and the tra
 A human reviews and submits this; you do not."""
 
 
-async def draft_dispute_response(
-    client: anthropic.AsyncAnthropic, dispute: dict, history: list[AuditLog]
-) -> str | None:
+async def draft_dispute_response(client: genai.Client, dispute: dict, history: list[AuditLog]) -> str | None:
     """Returns None on any failure; the dispute is escalated either way."""
     trail = [
         {
@@ -33,23 +32,12 @@ async def draft_dispute_response(
         for k in ("dispute_id", "reason", "status", "dispute_amount", "create_time", "messages", "dispute_life_cycle_stage")
     }
     try:
-        response = await client.messages.create(
+        response = await client.aio.models.generate_content(
             model=MODEL,
-            max_tokens=2000,
-            system=_SYSTEM_PROMPT,
-            output_config={"effort": "low"},
-            messages=[
-                {
-                    "role": "user",
-                    "content": json.dumps({"dispute": dispute_view, "audit_trail": trail}, default=str, indent=2),
-                }
-            ],
+            contents=json.dumps({"dispute": dispute_view, "audit_trail": trail}, default=str, indent=2),
+            config=types.GenerateContentConfig(system_instruction=_SYSTEM_PROMPT),
         )
-    except (anthropic.APIStatusError, anthropic.APIConnectionError):
-        return None
+        text = (response.text or "").strip()
     except Exception:
         return None
-    if response.stop_reason == "refusal":
-        return None
-    text = "".join(b.text for b in response.content if b.type == "text").strip()
     return text or None

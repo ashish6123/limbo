@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     paypal_base_url: str = "https://api-m.sandbox.paypal.com"
     paypal_currency: str = "USD"
 
-    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
 
     order_fulfillable_window_minutes: int = 30
     refund_settlement_sla_hours: int = 72
