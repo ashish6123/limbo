@@ -4,11 +4,10 @@ Every event is verified with PayPal's verify-webhook-signature API before it is
 trusted, de-duplicated on PayPal's event id, and mapped onto Limbo's existing
 ledger and webhook records, so reconciliation, diagnosis and policy code stay
 gateway-agnostic. A dispute opened on a payment Limbo knows about is escalated
-to a human at once, with a Claude-drafted response built from the audit trail."""
+to a human at once, with a Gemini-drafted response built from the audit trail."""
 
 from datetime import datetime, timezone
 
-import anthropic
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
@@ -17,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import writer as audit
 from app.config import settings
 from app.diagnosis.dispute import draft_dispute_response
+from app.diagnosis.llm import make_client
 from app.gateway.paypal_adapter import PayPalAdapter, to_minor_units
 from app.gateway.schemas import PaymentEntity, WebhookPayload
 from app.merchant.service import MerchantService
@@ -166,16 +166,16 @@ async def _dispute_created(session: AsyncSession, dispute: dict) -> dict:
 
     history = await audit.for_order(session, payment.order_id)
     draft = None
-    if settings.anthropic_api_key:
+    if settings.gemini_api_key:
         draft = await draft_dispute_response(
-            anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key), dispute, history
+            make_client(settings.gemini_api_key), dispute, history
         )
     reasoning = (
         f"Buyer opened PayPal dispute {dispute_id} ({dispute.get('reason')}) on a payment Limbo was tracking. "
         "Escalated to a human: disputes are never answered automatically."
     )
     if draft:
-        reasoning += f"\n\nClaude-drafted response for review:\n{draft}"
+        reasoning += f"\n\nGemini-drafted response for review:\n{draft}"
 
     # An ESCALATED action puts the case in the dashboard's exception queue.
     session.add(

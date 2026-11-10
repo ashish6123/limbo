@@ -15,17 +15,17 @@ A buyer pays with PayPal and PayPal captures the money. Then the merchant's webh
 Limbo continuously reconciles PayPal captures against the merchant's orders. When the two disagree (paid but cancelled, refund stuck, duplicate payment), it:
 
 1. **Detects** the mismatch and classifies it into one of six states.
-2. **Investigates** with a Claude agent that calls PayPal's APIs, read-only, to confirm the capture, check linked refunds and look for open disputes.
+2. **Investigates** with a Gemini agent that calls PayPal's APIs, read-only, to confirm the capture, check linked refunds and look for open disputes.
 3. **Explains** with a structured root cause and confidence, a recommended action and a draft message to the buyer.
 4. **Acts** through a deterministic policy engine, never the AI: it replays the webhook to complete the order, issues a real PayPal refund, or escalates to a human. Idempotency keys, amount caps, retry limits, a circuit breaker and dry-run mode apply.
-5. **Escalates disputes:** a `CUSTOMER.DISPUTE.CREATED` webhook on a tracked payment goes straight to a human, with a Claude-drafted response built only from the audit trail.
+5. **Escalates disputes:** a `CUSTOMER.DISPUTE.CREATED` webhook on a tracked payment goes straight to a human, with a Gemini-drafted response built only from the audit trail.
 
 Every step is written to an append-only audit log, which the live demo streams in real time.
 
 ## How we built it
 
 - **PayPal (sandbox):** Orders v2 (create, capture), Payments v2 (capture lookup, refunds with `PayPal-Request-Id` idempotency, refund status), Disputes API (read), Webhooks with verify-webhook-signature. `PAYPAL_BASE_URL` is locked to the sandbox in code.
-- **AI:** Claude (`claude-opus-5-5`) through the Anthropic API. A bounded tool loop (six turns at most) with three read-only PayPal tools, then structured output (Pydantic) for the diagnosis. A separate call drafts dispute responses. A deterministic fallback keeps everything working without an API key.
+- **AI:** Gemini (`gemini-3.8-flash`) through the Gemini API (`google-genai`). A bounded function-calling loop (six turns at most) with three read-only PayPal tools, then a separate tool-free call with a strict JSON schema (Pydantic) for the diagnosis. A separate call drafts dispute responses. A deterministic fallback keeps everything working without an API key.
 - **Backend:** FastAPI, SQLAlchemy async, Postgres; the reconciliation loop runs inside the API process.
 - **Frontend:** Next.js 14; the Limbo queue is built on AG Grid Community; live demo over server-sent events.
 - **Hosting:** Render (API and dashboard via `render.yaml`), Supabase Postgres.
@@ -52,11 +52,11 @@ Transaction Search for bulk backfills, Venmo and Pay Later flows, and merchant-c
 
 ## Built with
 
-paypal-orders-v2, paypal-payments-v2, paypal-webhooks, paypal-disputes, claude, anthropic-api, python, fastapi, postgresql, sqlalchemy, nextjs, typescript, ag-grid, tailwindcss, render, supabase
+paypal-orders-v2, paypal-payments-v2, paypal-webhooks, paypal-disputes, gemini, google-genai, python, fastapi, postgresql, sqlalchemy, nextjs, typescript, ag-grid, tailwindcss, render, supabase
 
 ## AI tools used
 
-- **Claude API (`claude-opus-5-5`)** inside the product: tool use with read-only PayPal tools, structured outputs for diagnosis, dispute-response drafting.
+- **Gemini API (`gemini-3.8-flash`)** inside the product: function calling with read-only PayPal tools, structured JSON output for diagnosis, dispute-response drafting.
 - **Claude Code** as a coding assistant during development.
 
 ## Testing instructions (for judges)

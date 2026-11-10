@@ -1,12 +1,11 @@
 from datetime import datetime
 
-import anthropic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import writer as audit
 from app.diagnosis.deterministic import diagnose_deterministic
-from app.diagnosis.llm import diagnose_llm
+from app.diagnosis.llm import diagnose_llm, make_client
 from app.diagnosis.paypal_tools import PayPalGet, PayPalReadOnlyTools
 from app.diagnosis.schemas import DiagnosisResult, EvidenceBundle, RefundEvidence, WebhookEventEvidence
 from app.models.diagnosis_record import DiagnosisRecord
@@ -28,7 +27,7 @@ class DiagnosisEngine:
         session: AsyncSession,
         fulfillable_window_minutes: int,
         refund_sla_hours: int,
-        anthropic_api_key: str = "",
+        gemini_api_key: str = "",
         time_provider: TimeProvider = SystemTimeProvider(),
         paypal_get: PayPalGet | None = None,
         commit_tool_calls: bool = False,
@@ -41,7 +40,7 @@ class DiagnosisEngine:
         self._fulfillable_window_minutes = fulfillable_window_minutes
         self._refund_sla_hours = refund_sla_hours
         self._time = time_provider
-        self._llm_client = anthropic.AsyncAnthropic(api_key=anthropic_api_key) if anthropic_api_key else None
+        self._llm_client = make_client(gemini_api_key) if gemini_api_key else None
 
     async def build_evidence(self, order_id: str) -> EvidenceBundle:
         order = await self._session.get(Order, order_id)
