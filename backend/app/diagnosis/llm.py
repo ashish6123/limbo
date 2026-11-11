@@ -68,15 +68,24 @@ async def _noop_fallback(reason: str) -> None:
     return None
 
 
+def _thinking() -> types.ThinkingConfig:
+    """Keep thinking short: with default thinking the free-tier model ran past
+    the request deadline (504 DEADLINE_EXCEEDED). Gemini 3+ models take a
+    thinking level; 2.5 models take a token budget."""
+    if MODEL.startswith("gemini-2"):
+        return types.ThinkingConfig(thinking_budget=1024)
+    return types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)
+
+
 def make_client(api_key: str) -> genai.Client:
     """The one place a Gemini client is built, so tests can swap in a fake.
 
-    Fail fast: a 25 s timeout and no SDK retries. On the free tier a 429 would
+    Fail fast: a 60 s timeout and no SDK retries. On the free tier a 429 would
     otherwise be retried with backoff and hold the request open for minutes;
     here it just returns None and the deterministic classifier takes over."""
     return genai.Client(
         api_key=api_key,
-        http_options=types.HttpOptions(timeout=25_000, retry_options=types.HttpRetryOptions(attempts=1)),
+        http_options=types.HttpOptions(timeout=60_000, retry_options=types.HttpRetryOptions(attempts=1)),
     )
 
 
@@ -113,6 +122,7 @@ async def diagnose_llm(
                 tools=[types.Tool(function_declarations=_FUNCTION_DECLARATIONS)],
                 # We run the tools ourselves: each call is checked and audited.
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                thinking_config=_thinking(),
             )
             for _ in range(MAX_TOOL_TURNS):
                 response = await client.aio.models.generate_content(model=MODEL, contents=contents, config=config)
@@ -151,6 +161,7 @@ async def diagnose_llm(
                 system_instruction=_SYSTEM_PROMPT,
                 response_mime_type="application/json",
                 response_json_schema=InvestigationOutput.model_json_schema(),
+                thinking_config=_thinking(),
             ),
         )
         out = InvestigationOutput.model_validate_json(final.text or "")
