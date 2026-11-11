@@ -60,6 +60,17 @@ One full lifecycle on the hosted deployment, against the real PayPal sandbox:
 
 In this run the diagnosis came from the deterministic fallback, not the Gemini agent: the free-tier Gemini call did not succeed, and the pipeline carried on without it, which is the designed behaviour.
 
+A second run the same day (Limbo order `demo_e32535bf8430`, capture `0LF514929S883331F`, 10.00 USD) shows the agent at work. Gemini called PayPal itself before concluding, and both lookups landed in the audit trail:
+
+| Audit event | What PayPal returned |
+|---|---|
+| `investigation / paypal.get_capture` | capture `COMPLETED`, 10.00 USD, `final_capture: true` |
+| `investigation / paypal.list_disputes` | no disputes |
+| `investigation / gemini.unavailable` | the concluding call got a 503 from the free tier ("high demand"), so the deterministic classifier finished the diagnosis |
+| `decision` / `outcome` | `AUTO_REFUND`, `EXECUTED` |
+
+The failure is recorded as an audit event with its reason, so a fallback is never silent.
+
 ### Why the AI can't move money
 
 The agent investigates and explains; it never acts. Its PayPal access goes through `PayPalAdapter.get`, which refuses anything but HTTP GET, and each tool only accepts the capture id under investigation (or refund ids PayPal itself links to it), so text inside an API response can't steer it toward other data. The concluding call is a separate request that offers no tools at all. What actually happens to the money is decided by the deterministic `PolicyEngine`: idempotency keys, an amount ceiling, retry limits, a circuit breaker and `DRY_RUN`. Without a `GEMINI_API_KEY`, diagnosis falls back to a deterministic classifier and recovery still works.
