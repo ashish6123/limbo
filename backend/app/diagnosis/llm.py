@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from typing import Awaitable, Callable
 
@@ -12,6 +13,8 @@ from app.diagnosis.schemas import DiagnosisResult, EvidenceBundle
 
 # Gemini on the free tier of the Gemini Developer API. Override with GEMINI_MODEL
 # (e.g. gemini-2.5-flash) if this model's free quota runs out.
+logger = logging.getLogger(__name__)
+
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
 
 # Hard cap on agent turns: an investigation is a handful of lookups, never an
@@ -146,9 +149,11 @@ async def diagnose_llm(
             ),
         )
         out = InvestigationOutput.model_validate_json(final.text or "")
-    except Exception:
+    except Exception as exc:
         # Rate limits (429 on the free tier), API errors, safety blocks and
-        # malformed JSON all land here.
+        # malformed JSON all land here. Logged (type and message only) so a
+        # fallback is diagnosable from the service logs.
+        logger.warning("gemini investigator fell back: %s: %s", type(exc).__name__, str(exc)[:400])
         return None
 
     result = DiagnosisResult(

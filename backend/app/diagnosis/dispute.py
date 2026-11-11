@@ -1,4 +1,5 @@
 import json
+import logging
 
 from google import genai
 from google.genai import types
@@ -38,6 +39,7 @@ async def draft_dispute_response(client: genai.Client, dispute: dict, history: l
             config=types.GenerateContentConfig(system_instruction=_SYSTEM_PROMPT),
         )
         text = (response.text or "").strip()
-    except Exception:
+    except Exception as exc:
+        logging.getLogger(__name__).warning("gemini dispute draft failed: %s: %s", type(exc).__name__, str(exc)[:400])
         return None
     return text or None
