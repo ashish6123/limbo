@@ -15,7 +15,7 @@ from app.diagnosis.schemas import DiagnosisResult, EvidenceBundle
 # (e.g. gemini-3.8-flash) to try another free-tier model.
 logger = logging.getLogger(__name__)
 
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 # Hard cap on agent turns: an investigation is a handful of lookups, never an
 # open-ended loop. Past this the agent must conclude with what it has.
