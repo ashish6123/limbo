@@ -16,6 +16,17 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/) (see
 
 Sandbox buyer account for judging: see the Devpost submission's "Testing instructions" field (sandbox-only credentials, no real money).
 
+### Hackathon requirements at a glance
+
+| Requirement | Where it is |
+|---|---|
+| PayPal developer platform (sandbox) | **Orders v2** (create, capture), **Payments v2** (capture lookup, refunds, refund status), **Disputes API** (read), **Webhooks** + verify-webhook-signature. Code: [`backend/app/gateway/paypal_adapter.py`](backend/app/gateway/paypal_adapter.py), [`backend/app/api/paypal_webhooks.py`](backend/app/api/paypal_webhooks.py) |
+| AI tool / model | **Google Gemini** (`gemini-3.5-flash-lite`, Gemini API via `google-genai`): an investigator agent with three read-only PayPal tools, structured JSON diagnosis, and dispute-response drafts. Code: [`backend/app/diagnosis/llm.py`](backend/app/diagnosis/llm.py), [`paypal_tools.py`](backend/app/diagnosis/paypal_tools.py), [`dispute.py`](backend/app/diagnosis/dispute.py) |
+| Sponsor tools | **Render** hosts the API ([`render.yaml`](render.yaml)); **AG Grid** Community powers the Limbo queue in the dashboard |
+| Setup instructions | [Run PayPal mode locally](#run-paypal-mode-locally), [Quickstart](#quickstart), [`docs/deployment.md`](docs/deployment.md) |
+| Open source license | MIT ([`LICENSE`](LICENSE)) |
+| Built during the submission period | [What's new for the hackathon](#whats-new-for-the-paypal-ai-hackathon-after-1-oct-2026) |
+
 ## The problem
 
 A customer pays on a merchant app. The payment gateway marks the payment successful and debits the money. But the success webhook to the merchant is lost, delayed, or fails mid-processing. The merchant's system shows "payment gateway failure," cancels the order, and — because its own records say the payment failed — never triggers a refund.
@@ -28,7 +39,7 @@ This is not a hypothetical. It's a real failure mode of asynchronous payment sys
 
 Limbo is an agentic system that continuously reconciles gateway payment records against merchant order records, classifies every mismatch into one of six states, diagnoses the root cause from observable evidence, and executes a bounded recovery action — complete the order, replay the webhook, auto-refund, or escalate to a human — with hard guardrails: idempotency, amount ceilings, retry limits, a circuit breaker, and an immutable audit trail.
 
-It reports measured money recovered across a synthetic 500-transaction batch, and has been verified end to end against one real Razorpay test-mode payment — real order, real webhook-drop simulation, real reconciliation, real refund executed via the live API.
+It reports measured money recovered across a synthetic 500-transaction batch, and has been verified end to end on the hosted deployment against the real PayPal sandbox: a real buyer-approved order, a real capture, a deliberately dropped webhook, reconciliation, the Gemini agent's PayPal lookups, and a real PayPal refund (see [the sandbox runs](#a-real-paypal-sandbox-run-11-nov-2026)).
 
 ## What's new for the PayPal AI Hackathon (after 1 Oct 2026)
 
@@ -42,8 +53,8 @@ Limbo existed before the hackathon as a Razorpay/mock-gateway prototype (last up
 | Dispute prevention | A `CUSTOMER.DISPUTE.CREATED` on a tracked payment is escalated to a human at once, with a Gemini-drafted dispute response built only from the audit trail (`backend/app/diagnosis/dispute.py`). |
 | Live demo | `/demo` now runs on real PayPal sandbox orders: approve → capture → dropped webhook → agent → policy → real refund. |
 | Dashboard | Limbo queue rebuilt on **AG Grid** (sort, filter, quick search, pagination), currency-aware amounts, gateway/AI mode badges. |
-| Deploy | `render.yaml` Blueprint now deploys both the API and the dashboard on **Render** in PayPal mode. |
-| Tests | `backend/tests/test_paypal_adapter.py`, `backend/tests/test_paypal_agent.py`: fake PayPal sandbox + fake Gemini, covering the tool scope guard, the investigator loop, the full PayPal demo lifecycle and webhook dispute escalation. 74 tests pass. |
+| Deploy | The API runs on **Render** in PayPal mode (`render.yaml` Blueprint, which can also host the dashboard); the live dashboard is on Vercel, the database on Supabase. |
+| Tests | `backend/tests/test_paypal_adapter.py`, `backend/tests/test_paypal_agent.py`: fake PayPal sandbox + fake Gemini, covering the tool scope guard, the investigator loop, the full PayPal demo lifecycle and webhook dispute escalation, and the audited Gemini fallback. 75 tests pass. |
 
 ### A real PayPal sandbox run (11 Nov 2026)
 
@@ -86,7 +97,7 @@ Script-only path, without the dashboard: `cd backend && python -m scripts.paypal
 
 ### Built with
 
-PayPal Orders v2, Payments v2 (captures, refunds), Disputes API (read), Webhooks + verify-webhook-signature, all on the PayPal sandbox · Gemini API (`gemini-3.5-flash-lite`, function calling + structured JSON output) · FastAPI, SQLAlchemy, Postgres · Next.js 14, AG Grid Community, Recharts · Render (API + dashboard), Supabase Postgres.
+PayPal Orders v2, Payments v2 (captures, refunds), Disputes API (read), Webhooks + verify-webhook-signature, all on the PayPal sandbox · Gemini API (`gemini-3.5-flash-lite`, function calling + structured JSON output) · FastAPI, SQLAlchemy, Postgres · Next.js 14, AG Grid Community, Recharts · Render (API), Vercel (dashboard), Supabase Postgres.
 
 ## Architecture
 
@@ -106,7 +117,7 @@ Full diagrams, with narration, in `docs/`:
 
 ## Quickstart
 
-Requires Docker and Python 3.11+. A `GEMINI_API_KEY` is optional — every LLM call site degrades to a deterministic fallback without one.
+Requires Docker and Python 3.11+. A `GEMINI_API_KEY` is optional — every LLM call site degrades to a deterministic fallback without one. For the PayPal sandbox setup used in the hackathon, follow [Run PayPal mode locally](#run-paypal-mode-locally); the commands below run the mock-gateway eval and the dashboard.
 
 ```bash
 cp .env.example .env
@@ -134,7 +145,7 @@ Regenerate the eval report on demand:
 make eval        # writes evals/results/report.md and report.json
 ```
 
-Switch to real Razorpay test-mode calls (order creation, refunds, webhook signature verification are all real API calls; see `docs/decisions.md` ADR-018 for why payment *creation* still requires one manual checkout):
+The pre-hackathon Razorpay mode still works. To switch to real Razorpay test-mode calls (order creation, refunds, webhook signature verification are all real API calls; see `docs/decisions.md` ADR-018 for why payment *creation* still requires one manual checkout):
 
 ```bash
 # in .env: GATEWAY_MODE=razorpay, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET
@@ -149,7 +160,7 @@ The live site runs on three free-tier services: Vercel (dashboard), Render (Fast
 
 ## Results
 
-Latest 500-transaction eval batch (mock mode, `make eval`):
+Latest 500-transaction eval batch (mock gateway, amounts in INR, `make eval`):
 
 | Metric | Result |
 |---|---|
@@ -166,7 +177,7 @@ Full breakdown, including per-state precision/recall: [`evals/results/report.md`
 
 **On the ₹0 revenue-recovered figure:** this batch's timeline always reconciles after the fulfillable window has already elapsed, so `LIMBO_PAID_CANCELLED` cases in this particular run resolve via `AUTO_REFUND`, not `REPLAY_WEBHOOK`. `REPLAY_WEBHOOK` is real and verified separately — Phase 4's dedicated within-window scenario proves it end to end. This is reported honestly (`docs/decisions.md` ADR-021) rather than engineered to populate both buckets artificially. Honest metrics over massaged ones was a standing rule for this build.
 
-One real Razorpay test-mode recovery lifecycle was also completed: a real payment (`pay_TSrHOuMZY7szwc`), a simulated webhook drop, correct detection and `AUTO_REFUND` decision, and a real refund (`rfnd_TTAg77RyCFBQrL`) executed and confirmed against the live API. See ADR-018/019/020 for the two real API constraints and one real bug that surfaced along the way.
+The real PayPal sandbox runs are [above](#a-real-paypal-sandbox-run-11-nov-2026). Before the hackathon, one real Razorpay test-mode recovery lifecycle was also completed: a real payment (`pay_TSrHOuMZY7szwc`), a simulated webhook drop, correct detection and `AUTO_REFUND` decision, and a real refund (`rfnd_TTAg77RyCFBQrL`) executed and confirmed against the live API. See ADR-018/019/020 for the two real API constraints and one real bug that surfaced along the way.
 
 ## Project layout
 
