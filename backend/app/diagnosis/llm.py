@@ -62,8 +62,15 @@ async def _noop_recorder(name: str, tool_input: dict, result: str, is_error: boo
 
 
 def make_client(api_key: str) -> genai.Client:
-    """The one place a Gemini client is built, so tests can swap in a fake."""
-    return genai.Client(api_key=api_key)
+    """The one place a Gemini client is built, so tests can swap in a fake.
+
+    Fail fast: a 25 s timeout and no SDK retries. On the free tier a 429 would
+    otherwise be retried with backoff and hold the request open for minutes;
+    here it just returns None and the deterministic classifier takes over."""
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=25_000, retry_options=types.HttpRetryOptions(attempts=1)),
+    )
 
 
 _FUNCTION_DECLARATIONS = [

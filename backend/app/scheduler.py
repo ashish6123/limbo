@@ -67,7 +67,11 @@ async def _run_reconciliation_cycle_locked(session, settings: Settings, time_pro
         session,
         fulfillable_window_minutes=settings.order_fulfillable_window_minutes,
         refund_sla_hours=settings.refund_settlement_sla_hours,
-        gemini_api_key=settings.gemini_api_key,
+        # The background loop re-diagnoses every actionable order each cycle, so
+        # it stays deterministic: on Gemini's free tier it would burn the daily
+        # quota in minutes. The Gemini agent runs on the per-order demo path and
+        # on dispute webhooks (ADR-029).
+        gemini_api_key="",
         time_provider=time_provider,
     )
     for order_id in actionable:
