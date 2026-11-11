@@ -12,10 +12,10 @@ from app.diagnosis.paypal_tools import TOOL_DEFINITIONS, PayPalReadOnlyTools
 from app.diagnosis.schemas import DiagnosisResult, EvidenceBundle
 
 # Gemini on the free tier of the Gemini Developer API. Override with GEMINI_MODEL
-# (e.g. gemini-2.5-flash) if this model's free quota runs out.
+# (e.g. gemini-3.8-flash) to try another free-tier model.
 logger = logging.getLogger(__name__)
 
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Hard cap on agent turns: an investigation is a handful of lookups, never an
 # open-ended loop. Past this the agent must conclude with what it has.
