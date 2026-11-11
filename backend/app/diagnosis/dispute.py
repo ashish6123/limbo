@@ -4,7 +4,7 @@ import logging
 from google import genai
 from google.genai import types
 
-from app.diagnosis.llm import MODEL
+from app.diagnosis.llm import MODEL, _thinking
 from app.models.audit_log import AuditLog
 
 _SYSTEM_PROMPT = """You draft PayPal dispute responses for a merchant's ops team.
@@ -36,7 +36,7 @@ async def draft_dispute_response(client: genai.Client, dispute: dict, history: l
         response = await client.aio.models.generate_content(
             model=MODEL,
             contents=json.dumps({"dispute": dispute_view, "audit_trail": trail}, default=str, indent=2),
-            config=types.GenerateContentConfig(system_instruction=_SYSTEM_PROMPT),
+            config=types.GenerateContentConfig(system_instruction=_SYSTEM_PROMPT, thinking_config=_thinking()),
         )
         text = (response.text or "").strip()
     except Exception as exc:
