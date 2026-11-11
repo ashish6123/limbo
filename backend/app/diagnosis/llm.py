@@ -64,6 +64,10 @@ async def _noop_recorder(name: str, tool_input: dict, result: str, is_error: boo
     return None
 
 
+async def _noop_fallback(reason: str) -> None:
+    return None
+
+
 def make_client(api_key: str) -> genai.Client:
     """The one place a Gemini client is built, so tests can swap in a fake.
 
@@ -91,6 +95,7 @@ async def diagnose_llm(
     client: genai.Client,
     tools: PayPalReadOnlyTools | None = None,
     on_tool_call: ToolCallRecorder = _noop_recorder,
+    on_fallback: Callable[[str], Awaitable[None]] = _noop_fallback,
 ) -> tuple[DiagnosisResult, InvestigationOutput] | None:
     """Runs the investigator. Returns None on any failure (missing key, rate
     limit, safety block, malformed output) so the caller falls back to the
@@ -153,7 +158,12 @@ async def diagnose_llm(
         # Rate limits (429 on the free tier), API errors, safety blocks and
         # malformed JSON all land here. Logged (type and message only) so a
         # fallback is diagnosable from the service logs.
-        logger.warning("gemini investigator fell back: %s: %s", type(exc).__name__, str(exc)[:400])
+        reason = f"{type(exc).__name__}: {str(exc)[:400]}"
+        logger.warning("gemini investigator fell back: %s", reason)
+        try:
+            await on_fallback(reason)
+        except Exception:
+            pass
         return None
 
     result = DiagnosisResult(

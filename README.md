@@ -45,9 +45,24 @@ Limbo existed before the hackathon as a Razorpay/mock-gateway prototype (last up
 | Deploy | `render.yaml` Blueprint now deploys both the API and the dashboard on **Render** in PayPal mode. |
 | Tests | `backend/tests/test_paypal_adapter.py`, `backend/tests/test_paypal_agent.py`: fake PayPal sandbox + fake Gemini, covering the tool scope guard, the investigator loop, the full PayPal demo lifecycle and webhook dispute escalation. 74 tests pass. |
 
+### A real PayPal sandbox run (11 Nov 2026)
+
+One full lifecycle on the hosted deployment, against the real PayPal sandbox:
+
+| Step | Result |
+|---|---|
+| Buyer approves a PayPal order | order `359382719Y0630611`, 10.00 USD (Limbo order `demo_1ddb4f9798ab`) |
+| Limbo captures it | capture `2L702242CT559240M`, `COMPLETED` |
+| Webhook dropped on purpose | order cancelled, payment still captured |
+| Reconciliation | classified `LIMBO_PAID_CANCELLED`, diagnosed `WEBHOOK_DROPPED` |
+| Policy engine | `AUTO_REFUND`, executed |
+| PayPal refund | refund `8EB89938K82336056`, `COMPLETED` |
+
+In this run the diagnosis came from the deterministic fallback, not the Gemini agent: the free-tier Gemini call did not succeed, and the pipeline carried on without it, which is the designed behaviour.
+
 ### Why the AI can't move money
 
-The agent investigates and explains; it never acts. Its PayPal access goes through `PayPalAdapter.get`, which refuses anything but HTTP GET, and each tool only accepts the capture id under investigation (or refund ids PayPal itself links to it), so text inside an API response can't steer it toward other data. The concluding turn runs with `tool_choice: none`. What actually happens to the money is decided by the deterministic `PolicyEngine`: idempotency keys, an amount ceiling, retry limits, a circuit breaker and `DRY_RUN`. Without a `GEMINI_API_KEY`, diagnosis falls back to a deterministic classifier and recovery still works.
+The agent investigates and explains; it never acts. Its PayPal access goes through `PayPalAdapter.get`, which refuses anything but HTTP GET, and each tool only accepts the capture id under investigation (or refund ids PayPal itself links to it), so text inside an API response can't steer it toward other data. The concluding call is a separate request that offers no tools at all. What actually happens to the money is decided by the deterministic `PolicyEngine`: idempotency keys, an amount ceiling, retry limits, a circuit breaker and `DRY_RUN`. Without a `GEMINI_API_KEY`, diagnosis falls back to a deterministic classifier and recovery still works.
 
 ### Run PayPal mode locally
 

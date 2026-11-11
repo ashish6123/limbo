@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import writer as audit
 from app.diagnosis.deterministic import diagnose_deterministic
-from app.diagnosis.llm import diagnose_llm, make_client
+from app.diagnosis.llm import MODEL, diagnose_llm, make_client
 from app.diagnosis.paypal_tools import PayPalGet, PayPalReadOnlyTools
 from app.diagnosis.schemas import DiagnosisResult, EvidenceBundle, RefundEvidence, WebhookEventEvidence
 from app.models.diagnosis_record import DiagnosisRecord
@@ -113,7 +113,21 @@ class DiagnosisEngine:
                 if self._commit_tool_calls:
                     await self._session.commit()
 
-            outcome = await diagnose_llm(evidence, self._llm_client, tools, record_tool_call)
+            async def record_fallback(reason: str) -> None:
+                # Visible in the audit trail (and the live demo stream), so a
+                # fallback to the deterministic classifier is never silent.
+                await audit.record(
+                    self._session,
+                    stage="investigation",
+                    event="gemini.unavailable",
+                    order_id=order_id,
+                    payment_id=evidence.payment_id,
+                    inputs={"model": MODEL},
+                    reasoning=f"Gemini agent unavailable, using the deterministic classifier. {reason}"[:1000],
+                    created_at=self._time.now(),
+                )
+
+            outcome = await diagnose_llm(evidence, self._llm_client, tools, record_tool_call, record_fallback)
             if outcome is not None:
                 result, investigation = outcome
                 source = "llm+paypal_tools" if tools is not None else "llm"
