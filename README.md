@@ -38,7 +38,7 @@ Limbo existed before the hackathon as a Razorpay/mock-gateway prototype (last up
 |---|---|
 | PayPal gateway | `backend/app/gateway/paypal_adapter.py`: OAuth2 client credentials, **Orders v2** create + capture, **Payments v2** capture lookup and refunds (with `PayPal-Request-Id` idempotency), refund status re-checks, amounts in USD minor units. `PAYPAL_BASE_URL` is locked to the sandbox; a live URL is rejected at startup. |
 | PayPal webhooks | `POST /webhooks/paypal` (`backend/app/api/paypal_webhooks.py`): every event is checked with **verify-webhook-signature**, de-duplicated on PayPal's event id, and mapped onto Limbo's ledger. Handles `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`, `CUSTOMER.DISPUTE.CREATED`. |
-| AI investigator | `backend/app/diagnosis/llm.py` + `paypal_tools.py`: Gemini (`gemini-3.8-flash` on the free tier of the Gemini API, overridable with `GEMINI_MODEL`) runs a bounded tool loop with three **read-only** PayPal tools (`get_capture`, `get_refund`, `list_disputes`), then returns a structured diagnosis, recommended action and a draft buyer message. Each tool call is written to the audit trail and streamed to `/demo`. |
+| AI investigator | `backend/app/diagnosis/llm.py` + `paypal_tools.py`: Gemini (`gemini-2.5-flash` on the free tier of the Gemini API, overridable with `GEMINI_MODEL`) runs a bounded tool loop with three **read-only** PayPal tools (`get_capture`, `get_refund`, `list_disputes`), then returns a structured diagnosis, recommended action and a draft buyer message. Each tool call is written to the audit trail and streamed to `/demo`. |
 | Dispute prevention | A `CUSTOMER.DISPUTE.CREATED` on a tracked payment is escalated to a human at once, with a Gemini-drafted dispute response built only from the audit trail (`backend/app/diagnosis/dispute.py`). |
 | Live demo | `/demo` now runs on real PayPal sandbox orders: approve → capture → dropped webhook → agent → policy → real refund. |
 | Dashboard | Limbo queue rebuilt on **AG Grid** (sort, filter, quick search, pagination), currency-aware amounts, gateway/AI mode badges. |
@@ -75,7 +75,7 @@ Script-only path, without the dashboard: `cd backend && python -m scripts.paypal
 
 ### Built with
 
-PayPal Orders v2, Payments v2 (captures, refunds), Disputes API (read), Webhooks + verify-webhook-signature, all on the PayPal sandbox · Gemini API (`gemini-3.8-flash`, function calling + structured JSON output) · FastAPI, SQLAlchemy, Postgres · Next.js 14, AG Grid Community, Recharts · Render (API + dashboard), Supabase Postgres.
+PayPal Orders v2, Payments v2 (captures, refunds), Disputes API (read), Webhooks + verify-webhook-signature, all on the PayPal sandbox · Gemini API (`gemini-2.5-flash`, function calling + structured JSON output) · FastAPI, SQLAlchemy, Postgres · Next.js 14, AG Grid Community, Recharts · Render (API + dashboard), Supabase Postgres.
 
 ## Architecture
 

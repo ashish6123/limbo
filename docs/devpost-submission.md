@@ -25,7 +25,7 @@ Every step is written to an append-only audit log, which the live demo streams i
 ## How we built it
 
 - **PayPal (sandbox):** Orders v2 (create, capture), Payments v2 (capture lookup, refunds with `PayPal-Request-Id` idempotency, refund status), Disputes API (read), Webhooks with verify-webhook-signature. `PAYPAL_BASE_URL` is locked to the sandbox in code.
-- **AI:** Gemini (`gemini-3.8-flash`) through the Gemini API (`google-genai`). A bounded function-calling loop (six turns at most) with three read-only PayPal tools, then a separate tool-free call with a strict JSON schema (Pydantic) for the diagnosis. A separate call drafts dispute responses. A deterministic fallback keeps everything working without an API key.
+- **AI:** Gemini (`gemini-2.5-flash`) through the Gemini API (`google-genai`). A bounded function-calling loop (six turns at most) with three read-only PayPal tools, then a separate tool-free call with a strict JSON schema (Pydantic) for the diagnosis. A separate call drafts dispute responses. A deterministic fallback keeps everything working without an API key.
 - **Backend:** FastAPI, SQLAlchemy async, Postgres; the reconciliation loop runs inside the API process.
 - **Frontend:** Next.js 14; the Limbo queue is built on AG Grid Community; live demo over server-sent events.
 - **Hosting:** Render (API and dashboard via `render.yaml`), Supabase Postgres.
@@ -56,7 +56,7 @@ paypal-orders-v2, paypal-payments-v2, paypal-webhooks, paypal-disputes, gemini, 
 
 ## AI tools used
 
-- **Gemini API (`gemini-3.8-flash`)** inside the product: function calling with read-only PayPal tools, structured JSON output for diagnosis, dispute-response drafting.
+- **Gemini API (`gemini-2.5-flash`)** inside the product: function calling with read-only PayPal tools, structured JSON output for diagnosis, dispute-response drafting.
 - **Claude Code** as a coding assistant during development.
 
 ## Testing instructions (for judges)
