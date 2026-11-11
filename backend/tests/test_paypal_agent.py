@@ -211,3 +211,25 @@ async def test_webhook_dispute_on_tracked_payment_escalates_and_dedupes(session)
 
     escalated = (await session.execute(select(PolicyAction).where(PolicyAction.order_id == order_id))).scalars().all()
     assert [(a.action_type, a.status) for a in escalated] == [(ActionType.ESCALATE_HUMAN, ActionStatus.ESCALATED)]
+
+
+@pytest.mark.asyncio
+async def test_investigator_reports_why_it_fell_back():
+    class Broken:
+        aio = SimpleNamespace(models=SimpleNamespace(generate_content=None))
+
+        def __init__(self):
+            async def boom(**kwargs):
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
+            self.aio = SimpleNamespace(models=SimpleNamespace(generate_content=boom))
+
+    reasons = []
+
+    async def on_fallback(reason):
+        reasons.append(reason)
+
+    evidence = EvidenceBundle(order_id="o1", order_state="CANCELLED", payment_id="CAP1", payment_status="captured",
+                              payment_captured_at=datetime.now(timezone.utc), webhook_events=[], refunds=[],
+                              now=datetime.now(timezone.utc), fulfillable_window_minutes=30, refund_sla_hours=72)
+    assert await llm.diagnose_llm(evidence, Broken(), None, on_fallback=on_fallback) is None
+    assert reasons == ["RuntimeError: 429 RESOURCE_EXHAUSTED"]
